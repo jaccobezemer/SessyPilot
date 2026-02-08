@@ -1,0 +1,56 @@
+menu "Example Configuration"
+    config EXAMPLE_DOUBLE_FB
+        bool "Use double Frame Buffer"
+        default "n"
+        help
+            Enable this option, driver will allocate two frame buffers.
+
+    config EXAMPLE_USE_BOUNCE_BUFFER
+        depends on !EXAMPLE_DOUBLE_FB
+        bool "Use bounce buffer"
+        help
+            Enable bounce buffer mode can achieve higher PCLK frequency at the cost of higher CPU consumption.
+
+    config EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
+        depends on !EXAMPLE_DOUBLE_FB
+        bool "Avoid tearing effect"
+        default "y"
+        help
+            Enable this option, the example will use a pair of semaphores to avoid the tearing effect.
+            Note, if the Double Frame Buffer is used, then we can also avoid the tearing effect without the lock.
+endmenu
+
+menu "Sessy Controller Configuration"
+    config SESSY_WIFI_SSID
+        string "Default WiFi SSID"
+        default "MyNetwork"
+        help
+            Default WiFi SSID. Can be overridden from the touchscreen settings.
+
+    config SESSY_WIFI_PASSWORD
+        string "Default WiFi Password"
+        default ""
+        help
+            Default WiFi password. Can be overridden from the touchscreen settings.
+
+    config SESSY_HOSTNAME
+        string "Sessy hostname or IP (blank = mDNS auto-discovery)"
+        default ""
+        help
+            If set, connect directly to this host instead of using mDNS.
+            Example: 192.168.1.42 or sessy-ABCD.local
+
+    config SESSY_POLL_INTERVAL_MS
+        int "Status polling interval in milliseconds"
+        default 5000
+        range 1000 60000
+        help
+            How often to poll the Sessy power status API.
+
+    config SESSY_ENERGY_POLL_INTERVAL_MS
+        int "Energy polling interval in milliseconds"
+        default 30000
+        range 5000 300000
+        help
+            How often to poll the Sessy energy meters API.
+endmenu

@@ -1,0 +1,22 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.adapterTargetName": "esp32s3",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.portWin": "COM3",
+  "files.associations": {
+    "vernon_st7701s.h": "c",
+    "gpio.h": "c",
+    "touch_gt911.h": "c",
+    "sdkconfig.h": "c",
+    "freertos.h": "c",
+    "lv_demos.h": "c",
+    "lv_demo_widgets.h": "c",
+    "lv_demo_stress.h": "c",
+    "gt911.h": "c",
+    "cstdint": "c"
+  },
+  "idf.flashType": "UART",
+  "idf.currentSetup": "C:\\Users\\jacco\\esp\\v5.5.1\\esp-idf"
+}

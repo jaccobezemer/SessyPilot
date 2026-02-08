@@ -1,0 +1,27 @@
+idf_component_register(
+                    SRCS  "main.c"
+                          "LCD_Driver/ST7701S.c"
+                          "Touch/GT911.c"
+                          "Touch/esp_lcd_touch/esp_lcd_touch.c"
+                          "TCA9554PWR/TCA9554PWR.c"
+                          "wifi/wifi_manager.c"
+                          "sessy/sessy_api.c"
+                          "settings/settings.c"
+                          "ui/ui_main.c"
+                          "ui/ui_status.c"
+                          "ui/ui_strategy.c"
+                          "ui/ui_energy.c"
+                          "ui/ui_settings.c"
+
+                    INCLUDE_DIRS "./LCD_Driver"
+                                 "./Touch"
+                                 "./Touch/esp_lcd_touch"
+                                 "./TCA9554PWR"
+                                 "./wifi"
+                                 "./sessy"
+                                 "./settings"
+                                 "./ui"
+                                 "."
+
+                    REQUIRES nvs_flash esp_wifi esp_http_client json
+                    )
