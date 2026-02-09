@@ -1,4 +1,5 @@
 #include "ui_main.h"
+#include "ui_auto_load.h"
 #include "ui_status.h"
 #include "ui_strategy.h"
 #include "ui_energy.h"
@@ -23,7 +24,7 @@ static void ui_refresh_timer_cb(lv_timer_t *timer)
             ui_status_update(&data->power_status);
         }
         if (data->strategy_valid) {
-            ui_strategy_update(data->active_strategy);
+            ui_update_strategy(data->active_strategy);
         }
         if (data->energy_status_valid) {
             ui_energy_update(&data->energy_status);
@@ -81,12 +82,14 @@ void ui_init(app_shared_data_t *shared_data)
     lv_obj_set_style_text_font(tab_btns, &lv_font_montserrat_12, 0);
 
     // Create tabs
-    lv_obj_t *tab_status   = lv_tabview_add_tab(tabview, "Status");
-    lv_obj_t *tab_control  = lv_tabview_add_tab(tabview, "Control");
-    lv_obj_t *tab_energy   = lv_tabview_add_tab(tabview, "Energy");
-    lv_obj_t *tab_settings = lv_tabview_add_tab(tabview, "Settings");
+    lv_obj_t *tab_auto_load = lv_tabview_add_tab(tabview, "Auto Laden");
+    lv_obj_t *tab_status    = lv_tabview_add_tab(tabview, "Status");
+    lv_obj_t *tab_control   = lv_tabview_add_tab(tabview, "Control");
+    lv_obj_t *tab_energy    = lv_tabview_add_tab(tabview, "Energy");
+    lv_obj_t *tab_settings  = lv_tabview_add_tab(tabview, "Settings");
 
     // Build each screen's content
+    ui_auto_load_create(tab_auto_load, shared_data);
     ui_status_create(tab_status);
     ui_strategy_create(tab_control, shared_data);
     ui_energy_create(tab_energy);
@@ -105,6 +108,7 @@ void ui_update_status(const sessy_status_response_t *data)
 
 void ui_update_strategy(sessy_strategy_t strategy)
 {
+    ui_auto_load_update(strategy);
     ui_strategy_update(strategy);
 }
 

@@ -1,4 +1,5 @@
 #include "ui_strategy.h"
+#include "sessy_api.h"
 #include "esp_log.h"
 #include <stdio.h>
 
@@ -30,12 +31,26 @@ static void btnmatrix_event_cb(lv_event_t *e)
     sessy_strategy_t strategy = btn_strategy_map[id];
     ESP_LOGI(TAG, "Strategy selected: %s", sessy_strategy_to_string(strategy));
 
-    if (s_shared) {
-        xSemaphoreTake(s_shared->mutex, portMAX_DELAY);
-        s_shared->pending_strategy_change = true;
-        s_shared->requested_strategy = strategy;
-        xSemaphoreGive(s_shared->mutex);
+    if (!s_shared) return;
+
+    /* Immediate visual feedback: mark button as checked */
+    for (int i = 0; i < 6; i++) {
+        if (i == id) {
+            lv_btnmatrix_set_btn_ctrl(obj, i, LV_BTNMATRIX_CTRL_CHECKED);
+        } else {
+            lv_btnmatrix_clear_btn_ctrl(obj, i, LV_BTNMATRIX_CTRL_CHECKED);
+        }
     }
+
+    /* Execute strategy change directly */
+    if (sessy_api_set_strategy(strategy) == ESP_OK) {
+        ESP_LOGI(TAG, "Strategy changed to %s", sessy_strategy_to_string(strategy));
+    } else {
+        ESP_LOGW(TAG, "Failed to change strategy");
+    }
+    
+    /* Poll status immediately */
+    sessy_poll_now(s_shared);
 }
 
 static void update_slider_value_label(void)
@@ -76,12 +91,17 @@ static void apply_btn_cb(lv_event_t *e)
     int32_t setpoint = lv_slider_get_value(slider);
     ESP_LOGI(TAG, "Apply setpoint: %d W", (int)setpoint);
 
-    if (s_shared) {
-        xSemaphoreTake(s_shared->mutex, portMAX_DELAY);
-        s_shared->pending_setpoint_change = true;
-        s_shared->requested_setpoint = setpoint;
-        xSemaphoreGive(s_shared->mutex);
+    if (!s_shared) return;
+
+    /* Execute setpoint change directly */
+    if (sessy_api_set_setpoint(setpoint) == ESP_OK) {
+        ESP_LOGI(TAG, "Setpoint set to %d W", (int)setpoint);
+    } else {
+        ESP_LOGW(TAG, "Failed to set setpoint");
     }
+    
+    /* Poll status immediately */
+    sessy_poll_now(s_shared);
 
     lv_obj_t *label = lv_obj_get_child(apply_btn, 0);
     lv_label_set_text(label, "Sent!");

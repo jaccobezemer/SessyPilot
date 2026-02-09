@@ -28,4 +28,7 @@ typedef struct {
     int32_t                 requested_setpoint;
 } app_shared_data_t;
 
+/* Poll Sessy immediately (e.g., when user triggers via UI) */
+void sessy_poll_now(app_shared_data_t *data);
+
 #endif

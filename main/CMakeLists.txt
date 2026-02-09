@@ -9,6 +9,7 @@ idf_component_register(
         "sessy/sessy_api.c"
         "settings/settings.c"
         "ui/ui_main.c"
+        "ui/ui_auto_load.c"
         "ui/ui_status.c"
         "ui/ui_strategy.c"
         "ui/ui_energy.c"

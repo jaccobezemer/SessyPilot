@@ -142,12 +142,24 @@ esp_err_t wifi_manager_discover_sessy(void)
         return ESP_ERR_NOT_FOUND;
     }
 
-    // Look for a service with hostname starting with "sessy"
+    // Look for a service with hostname starting with "sessy" and device = "Sessy Dongle"
     mdns_result_t *r = results;
     bool found = false;
     while (r) {
         if (r->hostname && strncasecmp(r->hostname, "sessy", 5) == 0) {
-            if (r->addr && r->addr->addr.type == ESP_IPADDR_TYPE_V4) {
+            // Check TXT records for device = "Sessy Dongle"
+            bool is_sessy_dongle = false;
+            for (size_t i = 0; i < r->txt_count; i++) {
+                mdns_txt_item_t *txt = &r->txt[i];
+                if (txt->key && strcmp(txt->key, "device") == 0 && txt->value) {
+                    if (strcmp(txt->value, "Sessy Dongle") == 0) {
+                        is_sessy_dongle = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (is_sessy_dongle && r->addr && r->addr->addr.type == ESP_IPADDR_TYPE_V4) {
                 snprintf(s_sessy_url, sizeof(s_sessy_url), "http://" IPSTR,
                          IP2STR(&r->addr->addr.u_addr.ip4));
                 ESP_LOGI(TAG, "Found Sessy via mDNS: %s (%s)", r->hostname, s_sessy_url);

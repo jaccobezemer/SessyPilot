@@ -215,6 +215,36 @@ static void wifi_event_callback(wifi_mgr_event_t event, void *arg)
 }
 
 /********************* Sessy Polling Task *********************/
+void sessy_poll_now(app_shared_data_t *data)
+{
+    if (!data || !wifi_manager_is_connected() || !wifi_manager_get_sessy_url()) {
+        return;
+    }
+
+    // Poll power status immediately
+    sessy_status_response_t status;
+    if (sessy_api_get_power_status(&status) == ESP_OK) {
+        xSemaphoreTake(data->mutex, portMAX_DELAY);
+        data->power_status = status;
+        data->power_status_valid = true;
+        data->sessy_reachable = true;
+        xSemaphoreGive(data->mutex);
+    } else {
+        xSemaphoreTake(data->mutex, portMAX_DELAY);
+        data->sessy_reachable = false;
+        xSemaphoreGive(data->mutex);
+    }
+
+    // Poll strategy
+    sessy_strategy_t strategy;
+    if (sessy_api_get_strategy(&strategy) == ESP_OK) {
+        xSemaphoreTake(data->mutex, portMAX_DELAY);
+        data->active_strategy = strategy;
+        data->strategy_valid = true;
+        xSemaphoreGive(data->mutex);
+    }
+}
+
 static void sessy_poll_task(void *arg)
 {
     app_shared_data_t *data = (app_shared_data_t *)arg;
@@ -239,19 +269,19 @@ static void sessy_poll_task(void *arg)
 
         // Process pending user commands
         xSemaphoreTake(data->mutex, portMAX_DELAY);
-        bool do_strategy = data->pending_strategy_change;
-        sessy_strategy_t req_strategy = data->requested_strategy;
+        // bool do_strategy = data->pending_strategy_change;
+        // sessy_strategy_t req_strategy = data->requested_strategy;
         bool do_setpoint = data->pending_setpoint_change;
         int32_t req_setpoint = data->requested_setpoint;
-        data->pending_strategy_change = false;
+        // data->pending_strategy_change = false;
         data->pending_setpoint_change = false;
         xSemaphoreGive(data->mutex);
 
-        if (do_strategy) {
-            if (sessy_api_set_strategy(req_strategy) == ESP_OK) {
-                ESP_LOGI(TAG, "Strategy changed to %s", sessy_strategy_to_string(req_strategy));
-            }
-        }
+        // if (do_strategy) {
+        //     if (sessy_api_set_strategy(req_strategy) == ESP_OK) {
+        //         ESP_LOGI(TAG, "Strategy changed to %s", sessy_strategy_to_string(req_strategy));
+        //     }
+        // }
         if (do_setpoint) {
             if (sessy_api_set_setpoint(req_setpoint) == ESP_OK) {
                 ESP_LOGI(TAG, "Setpoint set to %d W", (int)req_setpoint);
