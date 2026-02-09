@@ -19,6 +19,8 @@ static void load_defaults(void)
     strlcpy(s_settings.wifi_ssid, CONFIG_SESSY_WIFI_SSID, sizeof(s_settings.wifi_ssid));
     strlcpy(s_settings.wifi_password, CONFIG_SESSY_WIFI_PASSWORD, sizeof(s_settings.wifi_password));
     strlcpy(s_settings.sessy_hostname, CONFIG_SESSY_HOSTNAME, sizeof(s_settings.sessy_hostname));
+    strlcpy(s_settings.sessy_username, CONFIG_SESSY_USERNAME, sizeof(s_settings.sessy_username));
+    strlcpy(s_settings.sessy_password, CONFIG_SESSY_PASSWORD, sizeof(s_settings.sessy_password));    
 }
 
 static void load_from_nvs(void)
@@ -44,6 +46,15 @@ static void load_from_nvs(void)
     len = sizeof(s_settings.sessy_hostname);
     if (nvs_get_str(handle, "host", s_settings.sessy_hostname, &len) == ESP_OK) {
         ESP_LOGI(TAG, "Loaded Sessy hostname from NVS");
+    }
+
+    len = sizeof(s_settings.sessy_username);
+    if (nvs_get_str(handle, "sessy_user", s_settings.sessy_username, &len) == ESP_OK) {
+        ESP_LOGI(TAG, "Loaded Sessy username from NVS");
+    }
+    len = sizeof(s_settings.sessy_password);
+    if (nvs_get_str(handle, "sessy_pass", s_settings.sessy_password, &len) == ESP_OK) {
+        ESP_LOGI(TAG, "Loaded Sessy password from NVS");
     }
 
     nvs_close(handle);
@@ -72,9 +83,8 @@ esp_err_t settings_init(void)
     load_from_nvs();
 
     s_initialized = true;
-    ESP_LOGI(TAG, "Settings initialized (SSID: %s, Host: %s)",
-             s_settings.wifi_ssid,
-             strlen(s_settings.sessy_hostname) > 0 ? s_settings.sessy_hostname : "(mDNS)");
+    ESP_LOGI(TAG, "Settings initialized (SSID: %s, Host: %s, SessyUser=%s",
+             s_settings.wifi_ssid,strlen(s_settings.sessy_hostname) > 0 ? s_settings.sessy_hostname : "(mDNS)", s_settings.sessy_username);
     return ESP_OK;
 }
 
@@ -133,6 +143,36 @@ esp_err_t settings_set_sessy_hostname(const char *hostname)
     xSemaphoreGive(s_mutex);
 
     ESP_LOGI(TAG, "Sessy hostname saved: %s", strlen(s_settings.sessy_hostname) > 0 ? s_settings.sessy_hostname : "(mDNS)");
+    return ESP_OK;
+}
+
+esp_err_t settings_set_sessy_creds(const char *username, const char *password)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        xSemaphoreGive(s_mutex);
+        return ret;
+    }
+
+    if (username) {
+        strlcpy(s_settings.sessy_username, username, sizeof(s_settings.sessy_username));
+        nvs_set_str(handle, "sessy_user", s_settings.sessy_username);
+    }
+    if (password) {
+        strlcpy(s_settings.sessy_password, password, sizeof(s_settings.sessy_password));
+        nvs_set_str(handle, "sessy_pass", s_settings.sessy_password);
+    }
+
+    nvs_commit(handle);
+    nvs_close(handle);
+    xSemaphoreGive(s_mutex);
+
+    ESP_LOGI(TAG, "Sessy credentials saved");
     return ESP_OK;
 }
 

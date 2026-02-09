@@ -40,6 +40,18 @@ menu "Sessy Controller Configuration"
             If set, connect directly to this host instead of using mDNS.
             Example: 192.168.1.42 or sessy-ABCD.local
 
+    config SESSY_USERNAME
+        string "Sessy Username (from dongle sticker)"
+        default "DDGHC47E"
+        help
+        Username van Sessy dongle (bijv. DDGHC47E)
+
+    config SESSY_PASSWORD
+        string "Sessy Password (from dongle sticker)" 
+        default "XUSQS56C"
+        help
+        Password van Sessy dongle (bijv. XUSQS56C)
+
     config SESSY_POLL_INTERVAL_MS
         int "Status polling interval in milliseconds"
         default 5000

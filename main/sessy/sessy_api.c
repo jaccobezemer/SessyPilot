@@ -1,4 +1,5 @@
 #include "sessy_api.h"
+#include "settings.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -12,6 +13,8 @@ static const char *TAG = "sessy_api";
 static char s_base_url[128] = {0};
 static SemaphoreHandle_t s_mutex = NULL;
 
+extern const settings_t *settings_get(void);  // Declaration
+
 static const char *strategy_strings[STRATEGY_COUNT] = {
     [STRATEGY_NOM]            = "POWER_STRATEGY_NOM",
     [STRATEGY_ROI]            = "POWER_STRATEGY_ROI",
@@ -20,6 +23,47 @@ static const char *strategy_strings[STRATEGY_COUNT] = {
     [STRATEGY_SESSY_CONNECT]  = "POWER_STRATEGY_SESSY_CONNECT",
     [STRATEGY_ECO]            = "POWER_STRATEGY_ECO",
 };
+
+static const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static char *base64_encode(const char *input) {
+    static char output[512];
+    size_t in_len = strlen(input);
+    size_t out_len = 0;
+    
+    for (size_t i = 0; i < in_len; i += 3) {
+        uint32_t val = 0;
+        val = (input[i] << 16);
+        if (i+1 < in_len) val |= (input[i+1] << 8);
+        if (i+2 < in_len) val |= input[i+2];
+        
+        output[out_len++] = base64_table[(val >> 18) & 0x3F];
+        output[out_len++] = base64_table[(val >> 12) & 0x3F];
+        output[out_len++] = (i+1 < in_len) ? base64_table[(val >> 6) & 0x3F] : '=';
+        output[out_len++] = (i+2 < in_len) ? base64_table[val & 0x3F] : '=';
+    }
+    output[out_len] = '\0';
+    return output;
+}
+
+static const char* get_sessy_auth(void) {
+    static char auth_header[256];
+    
+    const settings_t *settings = settings_get();        
+    char userpass[64];
+    snprintf(userpass, sizeof(userpass), "%s:%s", 
+             settings->sessy_username, settings->sessy_password);
+            
+    char *b64 = base64_encode(userpass);
+
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wformat-truncation"
+    snprintf(auth_header, sizeof(auth_header), "Basic %s", b64);
+    #pragma GCC diagnostic pop
+
+    // ESP_LOGI(TAG, "Generated auth: %s", auth_header);
+    return auth_header;
+}
 
 esp_err_t sessy_api_init(const char *base_url)
 {
@@ -52,6 +96,9 @@ static char *http_get(const char *path, int *out_len)
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return NULL;
+
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Authorization", get_sessy_auth());
 
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
@@ -108,6 +155,9 @@ static esp_err_t http_post(const char *path, const char *json_body)
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return ESP_FAIL;
+
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Authorization", get_sessy_auth());
 
     esp_http_client_set_header(client, "Content-Type", "application/json");
     esp_http_client_set_post_field(client, json_body, strlen(json_body));

@@ -6884,6 +6884,26 @@
             {
                 "children": [],
                 "depends_on": null,
+                "help": "Username van Sessy dongle (bijv. DDGHC47E)",
+                "id": "SESSY_USERNAME",
+                "name": "SESSY_USERNAME",
+                "range": null,
+                "title": "Sessy Username (from dongle sticker)",
+                "type": "string"
+            },
+            {
+                "children": [],
+                "depends_on": null,
+                "help": "Password van Sessy dongle (bijv. XUSQS56C)",
+                "id": "SESSY_PASSWORD",
+                "name": "SESSY_PASSWORD",
+                "range": null,
+                "title": "Sessy Password (from dongle sticker)",
+                "type": "string"
+            },
+            {
+                "children": [],
+                "depends_on": null,
                 "help": "How often to poll the Sessy power status API.",
                 "id": "SESSY_POLL_INTERVAL_MS",
                 "name": "SESSY_POLL_INTERVAL_MS",

@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "sessy_controller",
-    "project_version":    "1",
+    "project_version":    "824108c-dirty",
     "project_path":       "C:/Users/jacco/Documents/ESP/Sessy-Controller",
     "idf_path":           "C:/Users/jacco/esp/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/jacco/Documents/ESP/Sessy-Controller/build",
@@ -1250,13 +1250,13 @@
             "dir": "C:/Users/jacco/Documents/ESP/Sessy-Controller/main",
             "type": "LIBRARY",
             "lib": "__idf_main",
-            "reqs": [ "nvs_flash", "esp_wifi", "esp_http_client", "json" ],
+            "reqs": [ "driver", "esp_timer", "esp_lcd", "nvs_flash", "esp_wifi", "esp_http_client", "json" ],
             "priv_reqs": [ "espressif__mdns", "lvgl__lvgl" ],
             "managed_reqs": [],
             "managed_priv_reqs": [ "espressif__mdns", "lvgl__lvgl" ],
             "file": "C:/Users/jacco/Documents/ESP/Sessy-Controller/build/esp-idf/main/libmain.a",
             "sources": [ "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/main.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/LCD_Driver/ST7701S.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/Touch/GT911.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/Touch/esp_lcd_touch/esp_lcd_touch.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/TCA9554PWR/TCA9554PWR.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/wifi/wifi_manager.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/sessy/sessy_api.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/settings/settings.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/ui/ui_main.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/ui/ui_status.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/ui/ui_strategy.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/ui/ui_energy.c", "C:/Users/jacco/Documents/ESP/Sessy-Controller/main/ui/ui_settings.c" ],
-            "include_dirs": [ "./LCD_Driver", "./Touch", "./Touch/esp_lcd_touch", "./TCA9554PWR", "./wifi", "./sessy", "./settings", "./ui", "." ]
+            "include_dirs": [ ".", "LCD_Driver", "Touch", "Touch/esp_lcd_touch", "TCA9554PWR", "wifi", "sessy", "settings", "ui" ]
         },
         "mbedtls": {
             "alias": "idf::mbedtls",
@@ -2952,11 +2952,11 @@
             "prefix": "idf",
             "dir": "C:/Users/jacco/Documents/ESP/Sessy-Controller/main",
             "lib": "__idf_main",
-            "reqs": [ "nvs_flash", "esp_wifi", "esp_http_client", "json" ],
+            "reqs": [ "driver", "esp_timer", "esp_lcd", "nvs_flash", "esp_wifi", "esp_http_client", "json" ],
             "priv_reqs": [ "espressif__mdns", "lvgl__lvgl" ],
             "managed_reqs": [],
             "managed_priv_reqs": [ "espressif__mdns", "lvgl__lvgl" ],
-            "include_dirs": [ "./LCD_Driver", "./Touch", "./Touch/esp_lcd_touch", "./TCA9554PWR", "./wifi", "./sessy", "./settings", "./ui", "." ]
+            "include_dirs": [ ".", "LCD_Driver", "Touch", "Touch/esp_lcd_touch", "TCA9554PWR", "wifi", "sessy", "settings", "ui" ]
         },
         "lvgl__lvgl": {
             "alias": "idf::lvgl__lvgl",
