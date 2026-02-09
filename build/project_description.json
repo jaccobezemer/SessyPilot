@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "sessy_controller",
-    "project_version":    "824108c-dirty",
+    "project_version":    "73b7cb1-dirty",
     "project_path":       "C:/Users/jacco/Documents/ESP/Sessy-Controller",
     "idf_path":           "C:/Users/jacco/esp/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/jacco/Documents/ESP/Sessy-Controller/build",

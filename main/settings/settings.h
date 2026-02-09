@@ -13,8 +13,8 @@ typedef struct {
     char wifi_ssid[SETTINGS_SSID_MAX_LEN + 1];
     char wifi_password[SETTINGS_PASS_MAX_LEN + 1];
     char sessy_hostname[SETTINGS_HOSTNAME_MAX_LEN + 1];
-    char sessy_username[SETTINGS_SESSY_USER_MAX_LEN + 1];  // ← Nieuw
-    char sessy_password[SETTINGS_SESSY_PASS_MAX_LEN + 1];  // ← Nieuw
+    char sessy_username[SETTINGS_SESSY_USER_MAX_LEN + 1];
+    char sessy_password[SETTINGS_SESSY_PASS_MAX_LEN + 1];
 } settings_t;
 
 esp_err_t settings_init(void);

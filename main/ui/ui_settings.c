@@ -10,6 +10,8 @@ static app_shared_data_t *s_shared = NULL;
 static lv_obj_t *ta_ssid;
 static lv_obj_t *ta_pass;
 static lv_obj_t *ta_host;
+static lv_obj_t *ta_sessy_user;
+static lv_obj_t *ta_sessy_pass;
 static lv_obj_t *kb;
 
 static void ta_event_cb(lv_event_t *e)
@@ -31,11 +33,14 @@ static void save_btn_cb(lv_event_t *e)
     const char *ssid = lv_textarea_get_text(ta_ssid);
     const char *pass = lv_textarea_get_text(ta_pass);
     const char *host = lv_textarea_get_text(ta_host);
+    const char *sessy_user = lv_textarea_get_text(ta_sessy_user);
+    const char *sessy_pass = lv_textarea_get_text(ta_sessy_pass);
 
-    ESP_LOGI(TAG, "Saving settings: SSID=%s, Host=%s", ssid, host);
+    ESP_LOGI(TAG, "Saving settings: SSID=%s, Host=%s, Sessy-User=%s", ssid, host, sessy_user);
 
     settings_set_wifi(ssid, pass);
     settings_set_sessy_hostname(host);
+    settings_set_sessy_creds(sessy_user, sessy_pass);
 
     // Reconnect WiFi with new credentials
     wifi_manager_set_credentials(ssid, pass);
@@ -55,6 +60,8 @@ static void reset_msgbox_cb(lv_event_t *e)
         lv_textarea_set_text(ta_ssid, cfg->wifi_ssid);
         lv_textarea_set_text(ta_pass, cfg->wifi_password);
         lv_textarea_set_text(ta_host, cfg->sessy_hostname);
+        lv_textarea_set_text(ta_sessy_user, cfg->sessy_username);
+        lv_textarea_set_text(ta_sessy_pass, cfg->sessy_password);        
         ESP_LOGI(TAG, "Settings reset to defaults");
     }
 
@@ -118,6 +125,33 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_textarea_set_text(ta_host, cfg->sessy_hostname);
     lv_obj_set_width(ta_host, LV_PCT(100));
     lv_obj_add_event_cb(ta_host, ta_event_cb, LV_EVENT_ALL, NULL);
+
+   // API Username  ← NIEUW
+    lv_obj_t *user_lbl = lv_label_create(parent);
+    lv_label_set_text(user_lbl, "Sessy Username (zie sticker):");
+    lv_obj_set_style_text_color(user_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(user_lbl, &lv_font_montserrat_14, 0);
+
+    ta_sessy_user = lv_textarea_create(parent);
+    lv_textarea_set_one_line(ta_sessy_user, true);
+    lv_textarea_set_max_length(ta_sessy_user, SETTINGS_SESSY_USER_MAX_LEN);
+    lv_textarea_set_text(ta_sessy_user, cfg->sessy_username);
+    lv_obj_set_width(ta_sessy_user, LV_PCT(100));
+    lv_obj_add_event_cb(ta_sessy_user, ta_event_cb, LV_EVENT_ALL, NULL);
+
+    // API Password  ← NIEUW
+    lv_obj_t *sessy_pass_lbl = lv_label_create(parent);
+    lv_label_set_text(sessy_pass_lbl, "Sessy Password (zie sticker):");
+    lv_obj_set_style_text_color(sessy_pass_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(sessy_pass_lbl, &lv_font_montserrat_14, 0);
+
+    ta_sessy_pass = lv_textarea_create(parent);
+    lv_textarea_set_one_line(ta_sessy_pass, true);
+    lv_textarea_set_max_length(ta_sessy_pass, SETTINGS_SESSY_PASS_MAX_LEN);
+    lv_textarea_set_password_mode(ta_sessy_pass, true);
+    lv_textarea_set_text(ta_sessy_pass, cfg->sessy_password);
+    lv_obj_set_width(ta_sessy_pass, LV_PCT(100));
+    lv_obj_add_event_cb(ta_sessy_pass, ta_event_cb, LV_EVENT_ALL, NULL);
 
     // Buttons row
     lv_obj_t *btn_row = lv_obj_create(parent);
