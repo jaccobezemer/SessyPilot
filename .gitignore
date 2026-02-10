@@ -1,4 +1,14 @@
 /.claude
 /.devcontainer
-/api_docs.yaml
-/sdkconfig.old
+
+# ESP-IDF build output
+build/
+build_*_*/
+
+# Config file wordt gegenereerd uit sdkconfig.defaults
+sdkconfig
+sdkconfig.old
+
+# Python / test rommel (optioneel)
+.pytest_cache/
+__pycache__/

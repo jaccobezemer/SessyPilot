@@ -87,7 +87,17 @@ void ui_auto_load_update(sessy_strategy_t strategy)
 {
     if (!auto_load_btn) return;
 
-    if (strategy == STRATEGY_IDLE) {
+    bool active = (strategy == STRATEGY_IDLE);
+
+    /* Also treat SOC == 0% as active */
+    if (!active && s_shared && s_shared->power_status_valid) {
+        float soc = s_shared->power_status.sessy.state_of_charge;
+        if (soc <= 0.01f) {
+            active = true;
+        }
+    }
+
+    if (active) {
         if (!s_is_active) {
             s_is_active = true;
             lv_obj_add_state(auto_load_btn, LV_STATE_CHECKED);
