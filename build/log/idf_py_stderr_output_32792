@@ -1,3 +1,0 @@
-Command: cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\jacco\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe -DESP_PLATFORM=1 -DSDKCONFIG='c:\Users\jacco\Documents\ESP\Sessy-Controller\sdkconfig' -DCCACHE_ENABLE=1 C:\Users\jacco\Documents\ESP\Sessy-Controller
-warning: the value 'y' is invalid for SOC_SDM_GROUPS (defined at C:/Users/jacco/esp/v5.5.1/esp-idf\./components/soc/esp32s3/include/soc/Kconfig.soc_caps.in:862), which has type int -- assignment ignored
-warning: user value 68 on the int symbol LWIP_DHCP_OPTIONS_LEN (defined at C:/Users/jacco/esp/v5.5.1/esp-idf/components/lwip/Kconfig:364) ignored due to being outside the active range ([69, 255]) -- falling back on defaults
