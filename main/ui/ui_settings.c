@@ -12,6 +12,7 @@ static lv_obj_t *ta_pass;
 static lv_obj_t *ta_host;
 static lv_obj_t *ta_sessy_user;
 static lv_obj_t *ta_sessy_pass;
+static lv_obj_t *sw_autoload_soc;
 static lv_obj_t *kb;
 
 static void ta_event_cb(lv_event_t *e)
@@ -26,6 +27,14 @@ static void ta_event_cb(lv_event_t *e)
         lv_keyboard_set_textarea(kb, NULL);
         lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+static void autoload_soc_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    settings_set_autoload_soc_zero(state);
+    ESP_LOGI(TAG, "Treat SOC==0%% as Sessy Idle toggle: %s", state ? "enabled" : "disabled");
 }
 
 static void save_btn_cb(lv_event_t *e)
@@ -61,7 +70,12 @@ static void reset_msgbox_cb(lv_event_t *e)
         lv_textarea_set_text(ta_pass, cfg->wifi_password);
         lv_textarea_set_text(ta_host, cfg->sessy_hostname);
         lv_textarea_set_text(ta_sessy_user, cfg->sessy_username);
-        lv_textarea_set_text(ta_sessy_pass, cfg->sessy_password);        
+        lv_textarea_set_text(ta_sessy_pass, cfg->sessy_password);
+        if (cfg->autoload_soc_zero) {
+            lv_obj_add_state(sw_autoload_soc, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(sw_autoload_soc, LV_STATE_CHECKED);
+        }
         ESP_LOGI(TAG, "Settings reset to defaults");
     }
 
@@ -84,28 +98,59 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(parent, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(parent, 10, 0);
-    lv_obj_set_style_pad_gap(parent, 4, 0);
+    lv_obj_set_style_pad_gap(parent, 12, 0);
 
-    // WiFi SSID
-    lv_obj_t *ssid_lbl = lv_label_create(parent);
-    lv_label_set_text(ssid_lbl, "WiFi SSID:");
+    // ===== WiFi Credentials (side-by-side) =====
+    lv_obj_t *wifi_lbl = lv_label_create(parent);
+    lv_label_set_text(wifi_lbl, "WiFi Credentials:");
+    lv_obj_set_style_text_color(wifi_lbl, lv_color_hex(0xBBBBBB), 0);
+    lv_obj_set_style_text_font(wifi_lbl, &lv_font_montserrat_14, 0);
+
+    lv_obj_t *wifi_row = lv_obj_create(parent);
+    lv_obj_set_size(wifi_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(wifi_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wifi_row, 0, 0);
+    lv_obj_set_style_pad_all(wifi_row, 0, 0);
+    lv_obj_set_flex_flow(wifi_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(wifi_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_gap(wifi_row, 8, 0);
+
+    // SSID column (left)
+    lv_obj_t *ssid_col = lv_obj_create(wifi_row);
+    lv_obj_set_size(ssid_col, LV_PCT(48), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(ssid_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ssid_col, 0, 0);
+    lv_obj_set_style_pad_all(ssid_col, 0, 0);
+    lv_obj_set_flex_flow(ssid_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(ssid_col, 2, 0);
+
+    lv_obj_t *ssid_lbl = lv_label_create(ssid_col);
+    lv_label_set_text(ssid_lbl, "SSID:");
     lv_obj_set_style_text_color(ssid_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(ssid_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(ssid_lbl, &lv_font_montserrat_12, 0);
 
-    ta_ssid = lv_textarea_create(parent);
+    ta_ssid = lv_textarea_create(ssid_col);
     lv_textarea_set_one_line(ta_ssid, true);
     lv_textarea_set_max_length(ta_ssid, SETTINGS_SSID_MAX_LEN);
     lv_textarea_set_text(ta_ssid, cfg->wifi_ssid);
     lv_obj_set_width(ta_ssid, LV_PCT(100));
     lv_obj_add_event_cb(ta_ssid, ta_event_cb, LV_EVENT_ALL, NULL);
 
-    // WiFi Password
-    lv_obj_t *pass_lbl = lv_label_create(parent);
-    lv_label_set_text(pass_lbl, "WiFi Password:");
-    lv_obj_set_style_text_color(pass_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(pass_lbl, &lv_font_montserrat_14, 0);
+    // Password column (right)
+    lv_obj_t *pass_col = lv_obj_create(wifi_row);
+    lv_obj_set_size(pass_col, LV_PCT(48), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(pass_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(pass_col, 0, 0);
+    lv_obj_set_style_pad_all(pass_col, 0, 0);
+    lv_obj_set_flex_flow(pass_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(pass_col, 2, 0);
 
-    ta_pass = lv_textarea_create(parent);
+    lv_obj_t *pass_lbl = lv_label_create(pass_col);
+    lv_label_set_text(pass_lbl, "Password:");
+    lv_obj_set_style_text_color(pass_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(pass_lbl, &lv_font_montserrat_12, 0);
+
+    ta_pass = lv_textarea_create(pass_col);
     lv_textarea_set_one_line(ta_pass, true);
     lv_textarea_set_max_length(ta_pass, SETTINGS_PASS_MAX_LEN);
     lv_textarea_set_password_mode(ta_pass, true);
@@ -113,11 +158,11 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_width(ta_pass, LV_PCT(100));
     lv_obj_add_event_cb(ta_pass, ta_event_cb, LV_EVENT_ALL, NULL);
 
-    // Sessy Host
+    // ===== Sessy Device (Host) =====
     lv_obj_t *host_lbl = lv_label_create(parent);
-    lv_label_set_text(host_lbl, "Sessy Host (blank=mDNS):");
+    lv_label_set_text(host_lbl, "Sessy Hostname (blank=mDNS):");
     lv_obj_set_style_text_color(host_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(host_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(host_lbl, &lv_font_montserrat_12, 0);
 
     ta_host = lv_textarea_create(parent);
     lv_textarea_set_one_line(ta_host, true);
@@ -126,26 +171,57 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_width(ta_host, LV_PCT(100));
     lv_obj_add_event_cb(ta_host, ta_event_cb, LV_EVENT_ALL, NULL);
 
-   // API Username  ← NIEUW
-    lv_obj_t *user_lbl = lv_label_create(parent);
-    lv_label_set_text(user_lbl, "Sessy Username (zie sticker):");
-    lv_obj_set_style_text_color(user_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(user_lbl, &lv_font_montserrat_14, 0);
+    // ===== Sessy API Credentials (side-by-side) =====
+    lv_obj_t *sessy_lbl = lv_label_create(parent);
+    lv_label_set_text(sessy_lbl, "Sessy API Credentials (zie sticker):");
+    lv_obj_set_style_text_color(sessy_lbl, lv_color_hex(0xBBBBBB), 0);
+    lv_obj_set_style_text_font(sessy_lbl, &lv_font_montserrat_14, 0);
 
-    ta_sessy_user = lv_textarea_create(parent);
+    lv_obj_t *sessy_row = lv_obj_create(parent);
+    lv_obj_set_size(sessy_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(sessy_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(sessy_row, 0, 0);
+    lv_obj_set_style_pad_all(sessy_row, 0, 0);
+    lv_obj_set_flex_flow(sessy_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(sessy_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_gap(sessy_row, 8, 0);
+
+    // Username column (left)
+    lv_obj_t *user_col = lv_obj_create(sessy_row);
+    lv_obj_set_size(user_col, LV_PCT(48), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(user_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(user_col, 0, 0);
+    lv_obj_set_style_pad_all(user_col, 0, 0);
+    lv_obj_set_flex_flow(user_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(user_col, 2, 0);
+
+    lv_obj_t *user_lbl = lv_label_create(user_col);
+    lv_label_set_text(user_lbl, "Username:");
+    lv_obj_set_style_text_color(user_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(user_lbl, &lv_font_montserrat_12, 0);
+
+    ta_sessy_user = lv_textarea_create(user_col);
     lv_textarea_set_one_line(ta_sessy_user, true);
     lv_textarea_set_max_length(ta_sessy_user, SETTINGS_SESSY_USER_MAX_LEN);
     lv_textarea_set_text(ta_sessy_user, cfg->sessy_username);
     lv_obj_set_width(ta_sessy_user, LV_PCT(100));
     lv_obj_add_event_cb(ta_sessy_user, ta_event_cb, LV_EVENT_ALL, NULL);
 
-    // API Password  ← NIEUW
-    lv_obj_t *sessy_pass_lbl = lv_label_create(parent);
-    lv_label_set_text(sessy_pass_lbl, "Sessy Password (zie sticker):");
-    lv_obj_set_style_text_color(sessy_pass_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(sessy_pass_lbl, &lv_font_montserrat_14, 0);
+    // Password column (right)
+    lv_obj_t *sessy_pass_col = lv_obj_create(sessy_row);
+    lv_obj_set_size(sessy_pass_col, LV_PCT(48), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(sessy_pass_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(sessy_pass_col, 0, 0);
+    lv_obj_set_style_pad_all(sessy_pass_col, 0, 0);
+    lv_obj_set_flex_flow(sessy_pass_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(sessy_pass_col, 2, 0);
 
-    ta_sessy_pass = lv_textarea_create(parent);
+    lv_obj_t *sessy_pass_lbl = lv_label_create(sessy_pass_col);
+    lv_label_set_text(sessy_pass_lbl, "Password:");
+    lv_obj_set_style_text_color(sessy_pass_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(sessy_pass_lbl, &lv_font_montserrat_12, 0);
+
+    ta_sessy_pass = lv_textarea_create(sessy_pass_col);
     lv_textarea_set_one_line(ta_sessy_pass, true);
     lv_textarea_set_max_length(ta_sessy_pass, SETTINGS_SESSY_PASS_MAX_LEN);
     lv_textarea_set_password_mode(ta_sessy_pass, true);
@@ -153,7 +229,41 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_width(ta_sessy_pass, LV_PCT(100));
     lv_obj_add_event_cb(ta_sessy_pass, ta_event_cb, LV_EVENT_ALL, NULL);
 
-    // Buttons row
+    // ===== Features =====
+    lv_obj_t *features_lbl = lv_label_create(parent);
+    lv_label_set_text(features_lbl, "Features:");
+    lv_obj_set_style_text_color(features_lbl, lv_color_hex(0xBBBBBB), 0);
+    lv_obj_set_style_text_font(features_lbl, &lv_font_montserrat_14, 0);
+
+    lv_obj_t *feature_row = lv_obj_create(parent);
+    lv_obj_set_size(feature_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(feature_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(feature_row, 0, 0);
+    lv_obj_set_style_pad_all(feature_row, 0, 0);
+    lv_obj_set_flex_flow(feature_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(feature_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(feature_row, 8, 0);
+
+    lv_obj_t *soc_text_lbl = lv_label_create(feature_row);
+    lv_label_set_text(soc_text_lbl, "Treat SOC=0% as Sessy Idle:");
+    lv_obj_set_style_text_color(soc_text_lbl, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_text_font(soc_text_lbl, &lv_font_montserrat_12, 0);
+
+    sw_autoload_soc = lv_switch_create(feature_row);
+    lv_obj_set_size(sw_autoload_soc, 40, 24);
+    if (cfg->autoload_soc_zero) {
+        lv_obj_add_state(sw_autoload_soc, LV_STATE_CHECKED);
+    }
+    lv_obj_add_event_cb(sw_autoload_soc, autoload_soc_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // ===== Spacer (grows to push buttons up) =====
+    lv_obj_t *spacer = lv_obj_create(parent);
+    lv_obj_set_height(spacer, 1);
+    lv_obj_set_style_bg_opa(spacer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(spacer, 0, 0);
+    lv_obj_set_flex_grow(spacer, 1);
+
+    // ===== Buttons row =====
     lv_obj_t *btn_row = lv_obj_create(parent);
     lv_obj_set_size(btn_row, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(btn_row, LV_OPA_TRANSP, 0);
@@ -184,3 +294,4 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_size(kb, LV_PCT(100), 180);
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
 }
+

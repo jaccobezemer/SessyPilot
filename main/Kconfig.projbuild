@@ -66,8 +66,8 @@ menu "Sessy Controller Configuration"
         help
             How often to poll the Sessy energy meters API.
 
-    config AUTOLOAD_SOC_ZERO_ACTIVE
-        bool "Treat SOC == 0% as Auto-Laden active"
+    config SESSY_IDLE_AT_SOC_ZERO
+        bool "Treat SOC == 0% as Sessy Idle"
         default y
         help
             When enabled, the Auto Laden button is shown as active (green)

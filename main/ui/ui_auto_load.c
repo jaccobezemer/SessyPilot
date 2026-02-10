@@ -2,6 +2,7 @@
 #include "app_data.h"
 #include "sdkconfig.h"
 #include "sessy_api.h"
+#include "settings.h"
 #include "esp_log.h"
 #include <stdio.h>
 
@@ -90,15 +91,14 @@ void ui_auto_load_update(sessy_strategy_t strategy)
 
     bool active = (strategy == STRATEGY_IDLE);
 
-    /* Also treat SOC == 0% as active (configurable) */
-#if CONFIG_AUTOLOAD_SOC_ZERO_ACTIVE
-    if (!active && s_shared && s_shared->power_status_valid) {
+    /* Also treat SOC == 0% as Sessy Idle (if user enabled this feature) */
+    const settings_t *cfg = settings_get();
+    if (!active && cfg->autoload_soc_zero && s_shared && s_shared->power_status_valid) {
         float soc = s_shared->power_status.sessy.state_of_charge;
         if (soc <= 0.01f) {
             active = true;
         }
     }
-#endif
 
     if (active) {
         if (!s_is_active) {

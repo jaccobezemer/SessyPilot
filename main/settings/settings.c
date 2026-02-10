@@ -20,7 +20,12 @@ static void load_defaults(void)
     strlcpy(s_settings.wifi_password, CONFIG_SESSY_WIFI_PASSWORD, sizeof(s_settings.wifi_password));
     strlcpy(s_settings.sessy_hostname, CONFIG_SESSY_HOSTNAME, sizeof(s_settings.sessy_hostname));
     strlcpy(s_settings.sessy_username, CONFIG_SESSY_USERNAME, sizeof(s_settings.sessy_username));
-    strlcpy(s_settings.sessy_password, CONFIG_SESSY_PASSWORD, sizeof(s_settings.sessy_password));    
+    strlcpy(s_settings.sessy_password, CONFIG_SESSY_PASSWORD, sizeof(s_settings.sessy_password));
+#ifdef CONFIG_SESSY_IDLE_AT_SOC_ZERO
+    s_settings.autoload_soc_zero = true;
+#else
+    s_settings.autoload_soc_zero = false;
+#endif
 }
 
 static void load_from_nvs(void)
@@ -55,6 +60,12 @@ static void load_from_nvs(void)
     len = sizeof(s_settings.sessy_password);
     if (nvs_get_str(handle, "sessy_pass", s_settings.sessy_password, &len) == ESP_OK) {
         ESP_LOGI(TAG, "Loaded Sessy password from NVS");
+    }
+
+    uint8_t autoload_soc = 0;
+    if (nvs_get_u8(handle, "autoload_soc", &autoload_soc) == ESP_OK) {
+        s_settings.autoload_soc_zero = (autoload_soc != 0);
+        ESP_LOGI(TAG, "Loaded 'Treat SOC==0% as Sessy Idle' setting from NVS");
     }
 
     nvs_close(handle);
@@ -195,4 +206,34 @@ esp_err_t settings_reset(void)
 
     ESP_LOGI(TAG, "Settings reset to defaults");
     return ESP_OK;
+}
+
+esp_err_t settings_set_autoload_soc_zero(bool enable)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    s_settings.autoload_soc_zero = enable;
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret == ESP_OK) {
+        uint8_t value = enable ? 1 : 0;
+        ret = nvs_set_u8(handle, "autoload_soc", value);
+        if (ret == ESP_OK) {
+            ret = nvs_commit(handle);
+        }
+        nvs_close(handle);
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Settings saved: Treat SOC==0%% as Sessy Idle = %d", enable);
+    } else {
+        ESP_LOGE(TAG, "Failed to save 'Treat SOC==0%% as Sessy Idle': %s", esp_err_to_name(ret));
+    }
+
+    return ret;
 }

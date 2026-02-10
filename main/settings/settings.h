@@ -2,6 +2,7 @@
 #define SETTINGS_H
 
 #include "esp_err.h"
+#include <stdbool.h>
 
 #define SETTINGS_SSID_MAX_LEN        32
 #define SETTINGS_PASS_MAX_LEN        64
@@ -15,6 +16,7 @@ typedef struct {
     char sessy_hostname[SETTINGS_HOSTNAME_MAX_LEN + 1];
     char sessy_username[SETTINGS_SESSY_USER_MAX_LEN + 1];
     char sessy_password[SETTINGS_SESSY_PASS_MAX_LEN + 1];
+    bool autoload_soc_zero;
 } settings_t;
 
 esp_err_t settings_init(void);
@@ -22,6 +24,7 @@ const settings_t *settings_get(void);
 esp_err_t settings_set_wifi(const char *ssid, const char *password);
 esp_err_t settings_set_sessy_hostname(const char *hostname);
 esp_err_t settings_set_sessy_creds(const char *username, const char *password);
+esp_err_t settings_set_autoload_soc_zero(bool enable);
 esp_err_t settings_reset(void);
 
 #endif
