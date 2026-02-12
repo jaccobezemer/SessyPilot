@@ -521,7 +521,7 @@ void app_main(void)
 
     // ===== PHASE 5: LVGL Main Loop =====
     // Turn on backlight
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 4096));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 2048));  // 4096 / 8192 = 50% duty cycle
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
 
     ESP_LOGI(TAG, "Sessy Controller running");
