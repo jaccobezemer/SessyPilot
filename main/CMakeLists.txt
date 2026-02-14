@@ -8,6 +8,7 @@ idf_component_register(
         "wifi/wifi_manager.c"
         "sessy/sessy_api.c"
         "settings/settings.c"
+        "ota/ota_server.c"
         "ui/ui_main.c"
         "ui/ui_auto_load.c"
         "ui/ui_status.c"
@@ -24,6 +25,7 @@ idf_component_register(
         "wifi"
         "sessy"
         "settings"
+        "ota"
         "ui"
 
     REQUIRES
@@ -33,5 +35,7 @@ idf_component_register(
         nvs_flash
         esp_wifi
         esp_http_client
+        esp_http_server
+        app_update
         json
 )

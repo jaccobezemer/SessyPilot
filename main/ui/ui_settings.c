@@ -295,3 +295,4 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
 }
 
+

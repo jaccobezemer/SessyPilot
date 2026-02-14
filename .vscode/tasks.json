@@ -131,6 +131,12 @@
       ]
     },
     {
+      "label": "OTA Flash - Flash over WiFi",
+      "type": "shell",
+      "command": "curl.exe --fail --progress-bar -o nul -X POST http://${config:idf.otaHost}:8080/update --data-binary @build/sessy_controller.bin",
+      "problemMatcher": []
+    },
+    {
       "label": "Monitor: Start the monitor",
       "type": "shell",
       "command": "${config:idf.pythonBinPath} ${config:idf.espIdfPath}/tools/idf.py -p ${config:idf.port} monitor",

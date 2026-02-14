@@ -4,20 +4,86 @@
 #include "ui_strategy.h"
 #include "ui_energy.h"
 #include "ui_settings.h"
+#include "ota_server.h"
+#include "wifi_manager.h"
 #include "esp_log.h"
 
 static const char *TAG = "ui_main";
 
 static lv_obj_t *tabview;
 static lv_obj_t *status_bar_wifi;
+static lv_obj_t *status_bar_ip;
 static lv_obj_t *status_bar_sessy;
 
+/* OTA overlay widgets */
+static lv_obj_t *ota_overlay = NULL;
+static lv_obj_t *ota_bar     = NULL;
+static lv_obj_t *ota_pct_lbl = NULL;
+static lv_obj_t *ota_status_lbl = NULL;
+
 static app_shared_data_t *s_shared_data = NULL;
+
+static void ota_overlay_create(void)
+{
+    ota_overlay = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(ota_overlay, 480, 480);
+    lv_obj_align(ota_overlay, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(ota_overlay, lv_color_hex(0x1A1A1A), 0);
+    lv_obj_set_style_bg_opa(ota_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(ota_overlay, 0, 0);
+    lv_obj_set_style_radius(ota_overlay, 0, 0);
+    lv_obj_set_flex_flow(ota_overlay, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(ota_overlay, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(ota_overlay, 20, 0);
+
+    lv_obj_t *title = lv_label_create(ota_overlay);
+    lv_label_set_text(title, "Firmware Update");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x2196F3), 0);
+
+    ota_bar = lv_bar_create(ota_overlay);
+    lv_obj_set_size(ota_bar, 360, 24);
+    lv_bar_set_range(ota_bar, 0, 100);
+    lv_bar_set_value(ota_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(ota_bar, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_bg_color(ota_bar, lv_color_hex(0x2196F3), LV_PART_INDICATOR);
+    lv_obj_set_style_radius(ota_bar, 6, 0);
+    lv_obj_set_style_radius(ota_bar, 6, LV_PART_INDICATOR);
+
+    ota_pct_lbl = lv_label_create(ota_overlay);
+    lv_label_set_text(ota_pct_lbl, "0%");
+    lv_obj_set_style_text_font(ota_pct_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(ota_pct_lbl, lv_color_hex(0xCCCCCC), 0);
+
+    ota_status_lbl = lv_label_create(ota_overlay);
+    lv_label_set_text(ota_status_lbl, "Uploading firmware...");
+    lv_obj_set_style_text_font(ota_status_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(ota_status_lbl, lv_color_hex(0x888888), 0);
+}
 
 static void ui_refresh_timer_cb(lv_timer_t *timer)
 {
     app_shared_data_t *data = (app_shared_data_t *)timer->user_data;
     if (!data) return;
+
+    /* Check OTA progress (lock-free atomic read) */
+    int ota_pct = ota_get_progress();
+    if (ota_pct >= 0) {
+        if (!ota_overlay) {
+            ota_overlay_create();
+        }
+        if (ota_pct <= 100) {
+            lv_bar_set_value(ota_bar, ota_pct, LV_ANIM_ON);
+            lv_label_set_text_fmt(ota_pct_lbl, "%d%%", ota_pct);
+        }
+        if (ota_pct > 100) {
+            lv_bar_set_value(ota_bar, 100, LV_ANIM_OFF);
+            lv_label_set_text(ota_pct_lbl, "100%");
+            lv_label_set_text(ota_status_lbl, "Rebooting...");
+            lv_obj_set_style_bg_color(ota_bar, lv_color_hex(0x4CAF50), LV_PART_INDICATOR);
+        }
+        return;  /* Skip normal UI updates during OTA */
+    }
 
     if (xSemaphoreTake(data->mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         if (data->power_status_valid) {
@@ -30,7 +96,16 @@ static void ui_refresh_timer_cb(lv_timer_t *timer)
             ui_energy_update(&data->energy_status);
         }
         ui_set_connection_status(data->wifi_connected, data->sessy_reachable);
+        bool wifi_ok = data->wifi_connected;
         xSemaphoreGive(data->mutex);
+
+        const char *ip = wifi_manager_get_ip_str();
+        if (wifi_ok && ip) {
+            lv_label_set_text(status_bar_ip, ip);
+            lv_obj_set_style_text_color(status_bar_ip, lv_color_hex(0xAAAAAA), 0);
+        } else {
+            lv_label_set_text(status_bar_ip, "");
+        }
     }
 }
 
@@ -64,6 +139,11 @@ void ui_init(app_shared_data_t *shared_data)
     lv_label_set_text(status_bar_wifi, "WiFi: --");
     lv_obj_set_style_text_font(status_bar_wifi, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(status_bar_wifi, lv_color_hex(0x888888), 0);
+
+    status_bar_ip = lv_label_create(status_bar);
+    lv_label_set_text(status_bar_ip, "");
+    lv_obj_set_style_text_font(status_bar_ip, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(status_bar_ip, lv_color_hex(0x888888), 0);
 
     status_bar_sessy = lv_label_create(status_bar);
     lv_label_set_text(status_bar_sessy, "Sessy: --");

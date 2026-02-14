@@ -17,6 +17,7 @@ static const char *TAG = "wifi_mgr";
 static wifi_mgr_callback_t s_callback = NULL;
 static bool s_connected = false;
 static char s_sessy_url[128] = {0};
+static char s_ip_str[16] = {0};
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_count = 0;
 
@@ -43,7 +44,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Got IP: %s", s_ip_str);
         s_connected = true;
         s_retry_count = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -194,4 +196,9 @@ const char *wifi_manager_get_sessy_url(void)
 bool wifi_manager_is_connected(void)
 {
     return s_connected;
+}
+
+const char *wifi_manager_get_ip_str(void)
+{
+    return strlen(s_ip_str) > 0 ? s_ip_str : NULL;
 }

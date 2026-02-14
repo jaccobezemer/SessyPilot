@@ -10,7 +10,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/ledc.h"
 #include "LCD_Driver/ST7701S.h"
 #include "Touch/GT911.h"
@@ -19,6 +19,7 @@
 #include "settings.h"
 #include "wifi_manager.h"
 #include "sessy_api.h"
+#include "ota_server.h"
 #include "ui_main.h"
 
 #define LEDC_TIMER              LEDC_TIMER_0
@@ -35,13 +36,9 @@ static const char *TAG = "sessy_ctrl";
 #define I2C_Touch_SDA_IO            15
 #define I2C_Touch_INT_IO            16
 #define I2C_Touch_RST_IO            -1
-#define I2C_MASTER_NUM              0
 #define I2C_MASTER_FREQ_HZ          400000
-#define I2C_MASTER_TX_BUF_DISABLE   0
-#define I2C_MASTER_RX_BUF_DISABLE   0
-#define I2C_MASTER_TIMEOUT_MS       1000
 /********************* LCD *********************/
-#define LCD_PIXEL_CLOCK_HZ     (18 * 1000 * 1000)
+#define LCD_PIXEL_CLOCK_HZ     (14 * 1000 * 1000)
 #define LCD_BK_LIGHT_ON_LEVEL  1
 #define LCD_BK_LIGHT_OFF_LEVEL !LCD_BK_LIGHT_ON_LEVEL
 #define PIN_NUM_BK_LIGHT       -1
@@ -69,7 +66,7 @@ static const char *TAG = "sessy_ctrl";
 #define LCD_H_RES              480
 #define LCD_V_RES              480
 
-#if CONFIG_DOUBLE_FB
+#if CONFIG_EXAMPLE_DOUBLE_FB
 #define LCD_NUM_FB             2
 #else
 #define LCD_NUM_FB             1
@@ -108,7 +105,7 @@ static void ledc_init(void)
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }
 
-#if CONFIG_AVOID_TEAR_EFFECT_WITH_SEM
+#if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
 SemaphoreHandle_t sem_vsync_end;
 SemaphoreHandle_t sem_gui_ready;
 #endif
@@ -116,7 +113,7 @@ SemaphoreHandle_t sem_gui_ready;
 static bool on_vsync_event(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *event_data, void *user_data)
 {
     BaseType_t high_task_awoken = pdFALSE;
-#if CONFIG_AVOID_TEAR_EFFECT_WITH_SEM
+#if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
     if (xSemaphoreTakeFromISR(sem_gui_ready, &high_task_awoken) == pdTRUE) {
         xSemaphoreGiveFromISR(sem_vsync_end, &high_task_awoken);
     }
@@ -131,7 +128,7 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
-#if CONFIG_AVOID_TEAR_EFFECT_WITH_SEM
+#if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
     xSemaphoreGive(sem_gui_ready);
     xSemaphoreTake(sem_vsync_end, portMAX_DELAY);
 #endif
@@ -162,21 +159,19 @@ void touchpad_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
     }
 }
 
-static esp_err_t i2c_master_init(void)
-{
-    int i2c_master_port = I2C_MASTER_NUM;
+i2c_master_bus_handle_t i2c_bus = NULL;
 
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
+static esp_err_t i2c_bus_init(void)
+{
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = I2C_NUM_0,
         .sda_io_num = I2C_Touch_SDA_IO,
         .scl_io_num = I2C_Touch_SCL_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_MASTER_FREQ_HZ,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
-
-    i2c_param_config(i2c_master_port, &conf);
-    return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
+    return i2c_new_master_bus(&bus_config, &i2c_bus);
 }
 
 /********************* WiFi Event Callback *********************/
@@ -188,6 +183,7 @@ static void wifi_event_callback(wifi_mgr_event_t event, void *arg)
         xSemaphoreTake(s_shared_data.mutex, portMAX_DELAY);
         s_shared_data.wifi_connected = true;
         xSemaphoreGive(s_shared_data.mutex);
+        ota_server_start();
         wifi_manager_discover_sessy();
         break;
 
@@ -340,7 +336,7 @@ void app_main(void)
     static lv_disp_draw_buf_t disp_buf;
     static lv_disp_drv_t disp_drv;
 
-#if CONFIG_AVOID_TEAR_EFFECT_WITH_SEM
+#if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
     ESP_LOGI(TAG, "Create semaphores");
     sem_vsync_end = xSemaphoreCreateBinary();
     assert(sem_vsync_end);
@@ -358,14 +354,15 @@ void app_main(void)
 #endif
 
     /********************* Touch *********************/
-    ESP_ERROR_CHECK(i2c_master_init());
+    ESP_ERROR_CHECK(i2c_bus_init());
     ESP_LOGI(TAG, "I2C initialized successfully");
 
     esp_lcd_touch_handle_t tp = NULL;
     esp_lcd_panel_io_handle_t tp_io_handle = NULL;
     esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
+    tp_io_config.scl_speed_hz = I2C_MASTER_FREQ_HZ;
     ESP_LOGI(TAG, "Initialize touch IO (I2C)");
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)I2C_MASTER_NUM, &tp_io_config, &tp_io_handle));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &tp_io_config, &tp_io_handle));
     esp_lcd_touch_config_t tp_cfg = {
         .x_max = LCD_V_RES,
         .y_max = LCD_H_RES,
@@ -387,9 +384,7 @@ void app_main(void)
         .data_width = 16,
         .psram_trans_align = 64,
         .num_fbs = LCD_NUM_FB,
-#if CONFIG_USE_BOUNCE_BUFFER
         .bounce_buffer_size_px = 10 * LCD_H_RES,
-#endif
         .clk_src = LCD_CLK_SRC_PLL240M,
         .disp_gpio_num = PIN_NUM_DISP_EN,
         .pclk_gpio_num = PIN_NUM_PCLK,
@@ -449,7 +444,7 @@ void app_main(void)
     lv_init();
     void *buf1 = NULL;
     void *buf2 = NULL;
-#if CONFIG_DOUBLE_FB
+#if CONFIG_EXAMPLE_DOUBLE_FB
     ESP_LOGI(TAG, "Use frame buffers as LVGL draw buffers");
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 2, &buf1, &buf2));
     lv_disp_draw_buf_init(&disp_buf, buf1, buf2, LCD_H_RES * LCD_V_RES);
@@ -469,7 +464,7 @@ void app_main(void)
     disp_drv.flush_cb = lvgl_flush_cb;
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;
-#if CONFIG_DOUBLE_FB
+#if CONFIG_EXAMPLE_DOUBLE_FB
     disp_drv.full_refresh = true;
 #endif
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
@@ -521,7 +516,7 @@ void app_main(void)
 
     // ===== PHASE 5: LVGL Main Loop =====
     // Turn on backlight
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 2048));  // 4096 / 8192 = 50% duty cycle
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 1024));  // 4096 / 8192 = 50% duty cycle
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
 
     ESP_LOGI(TAG, "Sessy Controller running");

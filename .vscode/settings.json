@@ -18,5 +18,6 @@
     "cstdint": "c"
   },
   "idf.flashType": "UART",
-  "idf.currentSetup": "C:\\Users\\jacco\\esp\\v5.5.1\\esp-idf"
+  "idf.currentSetup": "C:\\Users\\jacco\\esp\\v5.5.1\\esp-idf",
+  "idf.otaHost": "192.168.3.8",
 }

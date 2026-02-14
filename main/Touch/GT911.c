@@ -13,7 +13,6 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
 #include "esp_lcd_panel_io.h"
 #include "Touch/GT911.h"
 #include "TCA9554PWR/TCA9554PWR.h"
@@ -30,21 +29,23 @@ static const char *TAG = "GT911";
 
 esp_err_t bsp_exio_init(void)
 {
-    uint8_t write_buf = 0x01;
-    i2c_master_write_to_device(0, 0x20, &write_buf, 1, 1000 / portTICK_PERIOD_MS);
+    /* Configure EXIO_TP_RST pin (bit 1) as output on TCA9554PWR.
+     * Config register: 0 = output, 1 = input. Default = 0xFF (all inputs). */
+    uint8_t cfg = Read_REG(TCA9554_CONFIG_REG);
+    cfg &= ~(1 << EXIO_TP_RST);
+    Write_REG(TCA9554_CONFIG_REG, cfg);
     return ESP_OK;
 }
 
-esp_err_t bsp_exio_set(uint8_t num,bool enable)
+esp_err_t bsp_exio_set(uint8_t num, bool enable)
 {
-    static uint8_t write_buf=0x0;    
-    if(enable){
-        write_buf |= 1 << num;
-        i2c_master_write_to_device(0, 0x01, &write_buf, 1, 1000 / portTICK_PERIOD_MS);
-    }else{
-        write_buf &= ~(1 << num);
-        i2c_master_write_to_device(0, 0x01, &write_buf, 1, 1000 / portTICK_PERIOD_MS);
+    uint8_t output = Read_REG(TCA9554_OUTPUT_REG);
+    if (enable) {
+        output |= (1 << num);
+    } else {
+        output &= ~(1 << num);
     }
+    Write_REG(TCA9554_OUTPUT_REG, output);
     return ESP_OK;
 }
 

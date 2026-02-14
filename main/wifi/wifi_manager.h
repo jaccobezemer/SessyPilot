@@ -19,5 +19,6 @@ esp_err_t wifi_manager_set_credentials(const char *ssid, const char *password);
 esp_err_t wifi_manager_discover_sessy(void);
 const char *wifi_manager_get_sessy_url(void);
 bool wifi_manager_is_connected(void);
+const char *wifi_manager_get_ip_str(void);
 
 #endif
