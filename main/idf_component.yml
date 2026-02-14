@@ -1,4 +1,4 @@
 dependencies:
   idf: ">=5.0"
-  lvgl/lvgl: "~8.3.0"
+  lvgl/lvgl: "~8.4.0"
   espressif/mdns: "^1.0.0"

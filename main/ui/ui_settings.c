@@ -161,8 +161,8 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     // ===== Sessy Device (Host) =====
     lv_obj_t *host_lbl = lv_label_create(parent);
     lv_label_set_text(host_lbl, "Sessy Hostname (blank=mDNS):");
-    lv_obj_set_style_text_color(host_lbl, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(host_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(host_lbl, lv_color_hex(0xBBBBBB), 0);
+    lv_obj_set_style_text_font(host_lbl, &lv_font_montserrat_14, 0);
 
     ta_host = lv_textarea_create(parent);
     lv_textarea_set_one_line(ta_host, true);
@@ -247,7 +247,7 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_t *soc_text_lbl = lv_label_create(feature_row);
     lv_label_set_text(soc_text_lbl, "Treat SOC=0% as Sessy Idle:");
     lv_obj_set_style_text_color(soc_text_lbl, lv_color_hex(0xAAAAAA), 0);
-    lv_obj_set_style_text_font(soc_text_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(soc_text_lbl, &lv_font_montserrat_14, 0);
 
     sw_autoload_soc = lv_switch_create(feature_row);
     lv_obj_set_size(sw_autoload_soc, 40, 24);
