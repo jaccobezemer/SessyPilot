@@ -20,6 +20,7 @@
 #include "wifi_manager.h"
 #include "sessy_api.h"
 #include "ota_server.h"
+#include "log_buffer.h"
 #include "ui_main.h"
 
 #define LEDC_TIMER              LEDC_TIMER_0
@@ -245,6 +246,7 @@ static void sessy_poll_task(void *arg)
 {
     app_shared_data_t *data = (app_shared_data_t *)arg;
     uint32_t counter = 0;
+    bool was_connected = false;
     const uint32_t status_interval = CONFIG_SESSY_POLL_INTERVAL_MS / 1000;
     const uint32_t energy_interval = CONFIG_SESSY_ENERGY_POLL_INTERVAL_MS / 1000;
 
@@ -260,7 +262,14 @@ static void sessy_poll_task(void *arg)
                 wifi_manager_discover_sessy();
             }
             counter++;
+            was_connected = false;
             continue;
+        }
+
+        // Reset counter once on (re)connect so all polls fire immediately
+        if (!was_connected) {
+            counter = 0;
+            was_connected = true;
         }
 
         // Process pending user commands
@@ -326,6 +335,9 @@ static void sessy_poll_task(void *arg)
 /********************* App Main *********************/
 void app_main(void)
 {
+    // ===== PHASE 0: Log Buffer (before anything else) =====
+    log_buffer_init();
+
     // ===== PHASE 1: Hardware Init =====
     ledc_init();
     ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, LEDC_DUTY));

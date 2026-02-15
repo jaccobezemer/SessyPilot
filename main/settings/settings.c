@@ -65,7 +65,7 @@ static void load_from_nvs(void)
     uint8_t autoload_soc = 0;
     if (nvs_get_u8(handle, "autoload_soc", &autoload_soc) == ESP_OK) {
         s_settings.autoload_soc_zero = (autoload_soc != 0);
-        ESP_LOGI(TAG, "Loaded 'Treat SOC==0% as Sessy Idle' setting from NVS");
+        ESP_LOGI(TAG, "Loaded 'Treat SOC==0%% as Sessy Idle' setting from NVS");
     }
 
     nvs_close(handle);

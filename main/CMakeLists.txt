@@ -9,6 +9,7 @@ idf_component_register(
         "sessy/sessy_api.c"
         "settings/settings.c"
         "ota/ota_server.c"
+        "log/log_buffer.c"
         "ui/ui_main.c"
         "ui/ui_auto_load.c"
         "ui/ui_status.c"
@@ -26,6 +27,7 @@ idf_component_register(
         "sessy"
         "settings"
         "ota"
+        "log"
         "ui"
 
     REQUIRES

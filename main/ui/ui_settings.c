@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "wifi_manager.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include <string.h>
 
 static const char *TAG = "ui_settings";
@@ -35,6 +36,26 @@ static void autoload_soc_cb(lv_event_t *e)
     bool state = lv_obj_has_state(sw, LV_STATE_CHECKED);
     settings_set_autoload_soc_zero(state);
     ESP_LOGI(TAG, "Treat SOC==0%% as Sessy Idle toggle: %s", state ? "enabled" : "disabled");
+}
+
+static void restart_msgbox_cb(lv_event_t *e)
+{
+    lv_obj_t *msgbox = lv_event_get_current_target(e);
+    const char *btn_text = lv_msgbox_get_active_btn_text(msgbox);
+
+    if (btn_text && strcmp(btn_text, "Yes") == 0) {
+        ESP_LOGI(TAG, "User requested restart");
+        esp_restart();
+    }
+    lv_msgbox_close(msgbox);
+}
+
+static void restart_btn_cb(lv_event_t *e)
+{
+    static const char *btns[] = {"Yes", "No", ""};
+    lv_obj_t *msgbox = lv_msgbox_create(NULL, "Restart", "Restart the controller?", btns, true);
+    lv_obj_center(msgbox);
+    lv_obj_add_event_cb(msgbox, restart_msgbox_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 static void save_btn_cb(lv_event_t *e)
@@ -240,6 +261,7 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_style_bg_opa(feature_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(feature_row, 0, 0);
     lv_obj_set_style_pad_all(feature_row, 0, 0);
+    lv_obj_set_style_pad_right(feature_row, 5, 0);
     lv_obj_set_flex_flow(feature_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(feature_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(feature_row, 8, 0);
@@ -255,6 +277,23 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
         lv_obj_add_state(sw_autoload_soc, LV_STATE_CHECKED);
     }
     lv_obj_add_event_cb(sw_autoload_soc, autoload_soc_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* Push restart button to right edge */
+    lv_obj_t *feature_spacer = lv_obj_create(feature_row);
+    lv_obj_set_height(feature_spacer, 1);
+    lv_obj_set_style_bg_opa(feature_spacer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(feature_spacer, 0, 0);
+    lv_obj_set_style_pad_all(feature_spacer, 0, 0);
+    lv_obj_set_flex_grow(feature_spacer, 1);
+
+    lv_obj_t *restart_btn = lv_btn_create(feature_row);
+    lv_obj_set_size(restart_btn, 80, 24);
+    lv_obj_set_style_bg_color(restart_btn, lv_color_hex(0xFF9800), 0);
+    lv_obj_t *restart_lbl = lv_label_create(restart_btn);
+    lv_label_set_text(restart_lbl, "Restart");
+    lv_obj_set_style_text_font(restart_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_center(restart_lbl);
+    lv_obj_add_event_cb(restart_btn, restart_btn_cb, LV_EVENT_CLICKED, NULL);
 
     // ===== Spacer (grows to push buttons up) =====
     lv_obj_t *spacer = lv_obj_create(parent);

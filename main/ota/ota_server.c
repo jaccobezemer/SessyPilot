@@ -1,9 +1,13 @@
 #include "ota_server.h"
+#include "log_buffer.h"
 #include "esp_ota_ops.h"
+#include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include <string.h>
+#include <stdio.h>
 #include <stdatomic.h>
 
 static const char *TAG = "ota_server";
@@ -15,16 +19,17 @@ int ota_get_progress(void)
     return atomic_load(&s_ota_progress);
 }
 
-/* ── HTML upload page ───────────────────────────────────────────── */
-static const char UPLOAD_PAGE[] =
+/* ── HTML upload page (split around version placeholder) ────────── */
+static const char UPLOAD_PAGE_PRE[] =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Sessy OTA Update</title>"
+    "<title>Sessy Controller OTA Update</title>"
     "<style>"
     "body{font-family:sans-serif;background:#1e1e1e;color:#ccc;"
     "display:flex;justify-content:center;align-items:center;height:100vh;margin:0}"
     ".box{background:#2a2a2a;padding:2em;border-radius:12px;text-align:center;max-width:400px;width:90%}"
     "h2{color:#2196F3;margin-top:0}"
+    ".ver{color:#888;font-size:13px;margin-top:-0.5em;margin-bottom:1em}"
     "input[type=file]{margin:1em 0;color:#ccc}"
     "button{background:#4CAF50;color:#fff;border:none;padding:12px 32px;"
     "border-radius:6px;font-size:16px;cursor:pointer}"
@@ -34,7 +39,11 @@ static const char UPLOAD_PAGE[] =
     "#fill{height:100%;width:0%;background:#2196F3;transition:width 0.3s}"
     "#status{margin-top:0.5em;font-size:14px}"
     "</style></head><body><div class='box'>"
-    "<h2>Sessy OTA Update</h2>"
+    "<h2>Sessy Controller OTA Update</h2>"
+    "<p class='ver'>Current firmware: ";
+
+static const char UPLOAD_PAGE_POST[] =
+    "</p>"
     "<form id='f'><input type='file' id='fw' accept='.bin'><br>"
     "<button type='submit' id='btn'>Upload Firmware</button></form>"
     "<div id='progress'><div id='bar'><div id='fill'></div></div>"
@@ -54,7 +63,11 @@ static const char UPLOAD_PAGE[] =
     "if(e.lengthComputable){var pct=Math.round(e.loaded/e.total*100);"
     "fill.style.width=pct+'%';st.textContent='Uploading: '+pct+'%';}};"
     "xhr.onload=function(){"
-    "if(xhr.status==200){st.textContent='Success! Rebooting...';fill.style.width='100%';fill.style.background='#4CAF50';}"
+    "if(xhr.status==200){st.textContent='Success! Rebooting...';fill.style.width='100%';fill.style.background='#4CAF50';"
+    "setTimeout(function(){st.textContent='Waiting for device...';fill.style.background='#FF9800';"
+    "var iv=setInterval(function(){fetch('/').then(function(){clearInterval(iv);"
+    "st.textContent='Device is back! Reloading...';fill.style.background='#4CAF50';"
+    "setTimeout(function(){location.reload();},500);}).catch(function(){});},2000);},4000);}"
     "else{st.textContent='Error: '+xhr.responseText;fill.style.background='#F44336';btn.disabled=false;}};"
     "xhr.onerror=function(){st.textContent='Upload failed';fill.style.background='#F44336';btn.disabled=false;};"
     "xhr.open('POST','/update',true);"
@@ -65,8 +78,12 @@ static const char UPLOAD_PAGE[] =
 /* ── GET / — serve upload page ──────────────────────────────────── */
 static esp_err_t index_get_handler(httpd_req_t *req)
 {
+    const esp_app_desc_t *app = esp_app_get_description();
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, UPLOAD_PAGE, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, UPLOAD_PAGE_PRE, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, app->version, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, UPLOAD_PAGE_POST, HTTPD_RESP_USE_STRLEN);
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 /* ── POST /update — receive firmware and flash ──────────────────── */
@@ -157,11 +174,91 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     atomic_store(&s_ota_progress, 101);
     httpd_resp_sendstr(req, "OK");
 
-    /* Give the response time to be sent and UI to show "Rebooting" */
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    esp_restart();
+    /* Schedule reboot via timer so the HTTP response can be sent first */
+    const esp_timer_create_args_t restart_args = {
+        .callback = (esp_timer_cb_t)esp_restart,
+        .name = "ota_restart",
+    };
+    esp_timer_handle_t restart_timer;
+    esp_timer_create(&restart_args, &restart_timer);
+    esp_timer_start_once(restart_timer, 2000 * 1000);  /* 2 seconds */
 
-    return ESP_OK;  /* Not reached */
+    return ESP_OK;
+}
+
+/* ── GET /log — serve recent log output ─────────────────────────── */
+static const char LOG_PAGE_HEAD[] =
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Sessy Controller Log</title>"
+    "<style>"
+    "body{font-family:monospace;background:#1e1e1e;color:#ccc;margin:1em;font-size:13px}"
+    "h2{color:#2196F3}pre{white-space:pre-wrap;word-wrap:break-word}"
+    ".controls{margin-bottom:1em}"
+    "button{background:#2196F3;color:#fff;border:none;padding:6px 16px;"
+    "border-radius:4px;cursor:pointer;margin-right:8px}"
+    "</style></head><body>"
+    "<h2>Sessy Controller Log</h2>"
+    "<div class='controls'>"
+    "<button onclick='location.reload()'>Refresh</button>"
+    "<button id='ab' onclick='toggleAuto()'>Auto-refresh: OFF</button></div>"
+    "<pre id='log'>";
+
+static const char LOG_PAGE_TAIL[] =
+    "</pre><script>"
+    "var C={'31':'#F44336','32':'#4CAF50','33':'#FFB74D','35':'#CE93D8','36':'#4DD0E1'};"
+    "function ansi(s){"
+    "s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');"
+    "s=s.replace(/\\x1b\\[0;(\\d+)m/g,function(_,c){"
+    "return '<span style=\"color:'+(C[c]||'#ccc')+'\">';});"
+    "s=s.replace(/\\x1b\\[0m/g,'</span>');"
+    "s=s.replace(/\\x1b\\[[0-9;]*m/g,'');"
+    "return s;}"
+    "var el=document.getElementById('log');"
+    "el.innerHTML=ansi(el.textContent);"
+    "var ai=0;function toggleAuto(){"
+    "var b=document.getElementById('ab');"
+    "if(ai){clearInterval(ai);ai=0;b.textContent='Auto-refresh: OFF';}"
+    "else{ai=setInterval(function(){fetch('/log/raw')"
+    ".then(function(r){return r.text()})"
+    ".then(function(t){el.innerHTML=ansi(t);"
+    "window.scrollTo(0,document.body.scrollHeight);})},2000);"
+    "b.textContent='Auto-refresh: ON';}}"
+    "</script></body></html>";
+
+static esp_err_t log_get_handler(httpd_req_t *req)
+{
+    char *buf = malloc(LOG_BUFFER_SIZE + 1);
+    if (!buf) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, LOG_PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, LOG_PAGE_TAIL, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
+
+    free(buf);
+    return ESP_OK;
+}
+
+static esp_err_t log_raw_get_handler(httpd_req_t *req)
+{
+    char *buf = malloc(LOG_BUFFER_SIZE + 1);
+    if (!buf) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+    log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
+
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, buf);
+
+    free(buf);
+    return ESP_OK;
 }
 
 /* ── Start HTTP server ──────────────────────────────────────────── */
@@ -194,6 +291,20 @@ esp_err_t ota_server_start(void)
         .handler  = update_post_handler,
     };
     httpd_register_uri_handler(s_server, &update_uri);
+
+    httpd_uri_t log_uri = {
+        .uri      = "/log",
+        .method   = HTTP_GET,
+        .handler  = log_get_handler,
+    };
+    httpd_register_uri_handler(s_server, &log_uri);
+
+    httpd_uri_t log_raw_uri = {
+        .uri      = "/log/raw",
+        .method   = HTTP_GET,
+        .handler  = log_raw_get_handler,
+    };
+    httpd_register_uri_handler(s_server, &log_raw_uri);
 
     ESP_LOGI(TAG, "OTA server started on port 8080");
     return ESP_OK;

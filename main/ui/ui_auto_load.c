@@ -95,7 +95,8 @@ void ui_auto_load_update(sessy_strategy_t strategy)
     const settings_t *cfg = settings_get();
     if (!active && cfg->autoload_soc_zero && s_shared && s_shared->power_status_valid) {
         float soc = s_shared->power_status.sessy.state_of_charge;
-        if (soc <= 0.01f) {
+        float power = s_shared->power_status.sessy.power;
+        if (soc <= 0.01f && power <= 0.0f) {
             active = true;
         }
     }

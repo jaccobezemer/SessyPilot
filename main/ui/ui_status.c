@@ -121,11 +121,11 @@ void ui_status_update(const sessy_status_response_t *data)
 
     snprintf(buf, sizeof(buf), "%d W", (int)data->sessy.power);
     lv_label_set_text(power_label, buf);
-    // Green for generating (positive), red for charging (negative)
+    // Green for generating/charing (negative), red for power delivery (positive)
     if (data->sessy.power >= 0) {
-        lv_obj_set_style_text_color(power_label, lv_color_hex(0x4CAF50), 0);
-    } else {
         lv_obj_set_style_text_color(power_label, lv_color_hex(0xF44336), 0);
+    } else {
+        lv_obj_set_style_text_color(power_label, lv_color_hex(0x4CAF50), 0);
     }
 
     lv_label_set_text(state_label, sessy_state_to_label(data->sessy.system_state));
