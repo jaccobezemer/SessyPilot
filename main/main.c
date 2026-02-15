@@ -39,7 +39,7 @@ static const char *TAG = "sessy_ctrl";
 #define I2C_Touch_RST_IO            -1
 #define I2C_MASTER_FREQ_HZ          400000
 /********************* LCD *********************/
-#define LCD_PIXEL_CLOCK_HZ     (14 * 1000 * 1000)
+#define LCD_PIXEL_CLOCK_HZ     (18 * 1000 * 1000)
 #define LCD_BK_LIGHT_ON_LEVEL  1
 #define LCD_BK_LIGHT_OFF_LEVEL !LCD_BK_LIGHT_ON_LEVEL
 #define PIN_NUM_BK_LIGHT       -1

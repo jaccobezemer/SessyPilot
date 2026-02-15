@@ -45,7 +45,7 @@ curl -X POST http://<device-ip>:8080/ota --data-binary @build/Sessy-Controller.b
 
 ## Display Configuration
 
-- PCLK: 14 MHz (reduced from 18 MHz for PSRAM bandwidth stability)
+- PCLK: 18 MHz
 - Bounce buffer: 10 lines (reduces SPI0 contention between LCD DMA and PSRAM)
 - Double frame buffer in PSRAM
 - `pclk_active_neg = false` (correct for this ST7701S panel)
