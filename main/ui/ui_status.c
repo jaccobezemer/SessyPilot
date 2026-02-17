@@ -11,11 +11,13 @@ static lv_obj_t *voltage_label;
 static lv_obj_t *freq_label;
 static lv_obj_t *current_label;
 static lv_obj_t *ext_power_label;
+static lv_obj_t *house_power_label;
+static lv_obj_t *ev_charging_label;
 
 static lv_obj_t *create_info_row(lv_obj_t *parent, const char *title, lv_obj_t **value_label)
 {
     lv_obj_t *cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, LV_PCT(48), LV_SIZE_CONTENT);
+    lv_obj_set_size(cont, LV_PCT(31), LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(cont, 0, 0);
     lv_obj_set_style_pad_all(cont, 4, 0);
@@ -91,9 +93,11 @@ void ui_status_create(lv_obj_t *parent)
     create_info_row(grid, "Freq",     &freq_label);
     create_info_row(grid, "Current",  &current_label);
     create_info_row(grid, "Ext. Power", &ext_power_label);
+    create_info_row(grid, "House",     &house_power_label);
+    create_info_row(grid, "EV Charge", &ev_charging_label);
 }
 
-void ui_status_update(const sessy_status_response_t *data)
+void ui_status_update(const sessy_status_response_t *data, int32_t house_power, bool car_charging)
 {
     if (!data) return;
 
@@ -144,4 +148,16 @@ void ui_status_update(const sessy_status_response_t *data)
 
     snprintf(buf, sizeof(buf), "%d W", (int)data->sessy.external_power);
     lv_label_set_text(ext_power_label, buf);
+
+    snprintf(buf, sizeof(buf), "%d W", (int)house_power);
+    lv_label_set_text(house_power_label, buf);
+
+    if (car_charging) {
+        snprintf(buf, sizeof(buf), "Yes (%d W)", (int)house_power);
+        lv_label_set_text(ev_charging_label, buf);
+        lv_obj_set_style_text_color(ev_charging_label, lv_color_hex(0xFF9800), 0);
+    } else {
+        lv_label_set_text(ev_charging_label, "No");
+        lv_obj_set_style_text_color(ev_charging_label, lv_color_hex(0x888888), 0);
+    }
 }

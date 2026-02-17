@@ -18,7 +18,8 @@ static void load_defaults(void)
 {
     strlcpy(s_settings.wifi_ssid, CONFIG_SESSY_WIFI_SSID, sizeof(s_settings.wifi_ssid));
     strlcpy(s_settings.wifi_password, CONFIG_SESSY_WIFI_PASSWORD, sizeof(s_settings.wifi_password));
-    strlcpy(s_settings.sessy_hostname, CONFIG_SESSY_HOSTNAME, sizeof(s_settings.sessy_hostname));
+    strlcpy(s_settings.dongle_hostname, CONFIG_SESSY_DONGLE_HOSTNAME, sizeof(s_settings.dongle_hostname));
+    strlcpy(s_settings.p1_hostname, CONFIG_SESSY_P1_HOSTNAME, sizeof(s_settings.p1_hostname));
     strlcpy(s_settings.sessy_username, CONFIG_SESSY_USERNAME, sizeof(s_settings.sessy_username));
     strlcpy(s_settings.sessy_password, CONFIG_SESSY_PASSWORD, sizeof(s_settings.sessy_password));
 #ifdef CONFIG_SESSY_IDLE_AT_SOC_ZERO
@@ -26,6 +27,8 @@ static void load_defaults(void)
 #else
     s_settings.autoload_soc_zero = false;
 #endif
+    s_settings.car_charge_threshold = CONFIG_SESSY_CAR_CHARGE_THRESHOLD;
+    s_settings.car_charge_stop_delay = CONFIG_SESSY_CAR_CHARGE_STOP_DELAY;
 }
 
 static void load_from_nvs(void)
@@ -48,9 +51,14 @@ static void load_from_nvs(void)
         ESP_LOGI(TAG, "Loaded WiFi password from NVS");
     }
 
-    len = sizeof(s_settings.sessy_hostname);
-    if (nvs_get_str(handle, "host", s_settings.sessy_hostname, &len) == ESP_OK) {
-        ESP_LOGI(TAG, "Loaded Sessy hostname from NVS");
+    len = sizeof(s_settings.dongle_hostname);
+    if (nvs_get_str(handle, "host", s_settings.dongle_hostname, &len) == ESP_OK) {
+        ESP_LOGI(TAG, "Loaded Dongle hostname from NVS");
+    }
+
+    len = sizeof(s_settings.p1_hostname);
+    if (nvs_get_str(handle, "p1_host", s_settings.p1_hostname, &len) == ESP_OK) {
+        ESP_LOGI(TAG, "Loaded P1 hostname from NVS");
     }
 
     len = sizeof(s_settings.sessy_username);
@@ -66,6 +74,18 @@ static void load_from_nvs(void)
     if (nvs_get_u8(handle, "autoload_soc", &autoload_soc) == ESP_OK) {
         s_settings.autoload_soc_zero = (autoload_soc != 0);
         ESP_LOGI(TAG, "Loaded 'Treat SOC==0%% as Sessy Idle' setting from NVS");
+    }
+
+    int32_t car_thresh = 0;
+    if (nvs_get_i32(handle, "car_thresh", &car_thresh) == ESP_OK) {
+        s_settings.car_charge_threshold = car_thresh;
+        ESP_LOGI(TAG, "Loaded car charge threshold from NVS: %d W", (int)car_thresh);
+    }
+
+    int32_t stop_delay = 0;
+    if (nvs_get_i32(handle, "car_stopd", &stop_delay) == ESP_OK) {
+        s_settings.car_charge_stop_delay = stop_delay;
+        ESP_LOGI(TAG, "Loaded car charge stop delay from NVS: %d min", (int)stop_delay);
     }
 
     nvs_close(handle);
@@ -94,8 +114,9 @@ esp_err_t settings_init(void)
     load_from_nvs();
 
     s_initialized = true;
-    ESP_LOGI(TAG, "Settings initialized (SSID: %s, Host: %s, SessyUser=%s",
-             s_settings.wifi_ssid,strlen(s_settings.sessy_hostname) > 0 ? s_settings.sessy_hostname : "(mDNS)", s_settings.sessy_username);
+    ESP_LOGI(TAG, "Settings initialized (SSID: %s, Dongle: %s, P1: %s, User=%s",
+             s_settings.wifi_ssid, strlen(s_settings.dongle_hostname) > 0 ? s_settings.dongle_hostname : "(mDNS)",
+             strlen(s_settings.p1_hostname) > 0 ? s_settings.p1_hostname : "(mDNS)", s_settings.sessy_username);
     return ESP_OK;
 }
 
@@ -134,7 +155,7 @@ esp_err_t settings_set_wifi(const char *ssid, const char *password)
     return ESP_OK;
 }
 
-esp_err_t settings_set_sessy_hostname(const char *hostname)
+esp_err_t settings_set_dongle_hostname(const char *hostname)
 {
     if (!s_initialized) return ESP_ERR_INVALID_STATE;
 
@@ -147,13 +168,36 @@ esp_err_t settings_set_sessy_hostname(const char *hostname)
         return ret;
     }
 
-    strlcpy(s_settings.sessy_hostname, hostname ? hostname : "", sizeof(s_settings.sessy_hostname));
-    nvs_set_str(handle, "host", s_settings.sessy_hostname);
+    strlcpy(s_settings.dongle_hostname, hostname ? hostname : "", sizeof(s_settings.dongle_hostname));
+    nvs_set_str(handle, "host", s_settings.dongle_hostname);
     nvs_commit(handle);
     nvs_close(handle);
     xSemaphoreGive(s_mutex);
 
-    ESP_LOGI(TAG, "Sessy hostname saved: %s", strlen(s_settings.sessy_hostname) > 0 ? s_settings.sessy_hostname : "(mDNS)");
+    ESP_LOGI(TAG, "Dongle hostname saved: %s", strlen(s_settings.dongle_hostname) > 0 ? s_settings.dongle_hostname : "(mDNS)");
+    return ESP_OK;
+}
+
+esp_err_t settings_set_p1_hostname(const char *hostname)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        xSemaphoreGive(s_mutex);
+        return ret;
+    }
+
+    strlcpy(s_settings.p1_hostname, hostname ? hostname : "", sizeof(s_settings.p1_hostname));
+    nvs_set_str(handle, "p1_host", s_settings.p1_hostname);
+    nvs_commit(handle);
+    nvs_close(handle);
+    xSemaphoreGive(s_mutex);
+
+    ESP_LOGI(TAG, "P1 hostname saved: %s", strlen(s_settings.p1_hostname) > 0 ? s_settings.p1_hostname : "(mDNS)");
     return ESP_OK;
 }
 
@@ -233,6 +277,64 @@ esp_err_t settings_set_autoload_soc_zero(bool enable)
         ESP_LOGI(TAG, "Settings saved: Treat SOC==0%% as Sessy Idle = %d", enable);
     } else {
         ESP_LOGE(TAG, "Failed to save 'Treat SOC==0%% as Sessy Idle': %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+esp_err_t settings_set_car_charge_threshold(int32_t watts)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    s_settings.car_charge_threshold = watts;
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret == ESP_OK) {
+        ret = nvs_set_i32(handle, "car_thresh", watts);
+        if (ret == ESP_OK) {
+            ret = nvs_commit(handle);
+        }
+        nvs_close(handle);
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Car charge threshold saved: %d W", (int)watts);
+    } else {
+        ESP_LOGE(TAG, "Failed to save car charge threshold: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+esp_err_t settings_set_car_charge_stop_delay(int32_t minutes)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    s_settings.car_charge_stop_delay = minutes;
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret == ESP_OK) {
+        ret = nvs_set_i32(handle, "car_stopd", minutes);
+        if (ret == ESP_OK) {
+            ret = nvs_commit(handle);
+        }
+        nvs_close(handle);
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Car charge stop delay saved: %d min", (int)minutes);
+    } else {
+        ESP_LOGE(TAG, "Failed to save car charge stop delay: %s", esp_err_to_name(ret));
     }
 
     return ret;

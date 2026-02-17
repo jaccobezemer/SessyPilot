@@ -33,12 +33,19 @@ menu "Sessy Controller Configuration"
         help
             Default WiFi password. Can be overridden from the touchscreen settings.
 
-    config SESSY_HOSTNAME
-        string "Sessy hostname or IP (blank = mDNS auto-discovery)"
+    config SESSY_DONGLE_HOSTNAME
+        string "Sessy Dongle hostname or IP (blank = mDNS)"
         default ""
         help
-            If set, connect directly to this host instead of using mDNS.
+            If set, connect directly to this Sessy Dongle instead of using mDNS.
             Example: 192.168.1.42 or sessy-ABCD.local
+
+    config SESSY_P1_HOSTNAME
+        string "Sessy P1 Meter hostname or IP (blank = mDNS)"
+        default ""
+        help
+            If set, connect directly to this Sessy P1 Meter instead of using mDNS.
+            Example: 192.168.1.43 or sessy-EFGH.local
 
     config SESSY_USERNAME
         string "Sessy Username (from dongle sticker)"
@@ -65,6 +72,23 @@ menu "Sessy Controller Configuration"
         range 5000 300000
         help
             How often to poll the Sessy energy meters API.
+
+    config SESSY_CAR_CHARGE_THRESHOLD
+        int "Car charge detection threshold in Watts"
+        default 8000
+        range 500 20000
+        help
+            Power threshold (Watts) above which a car is assumed to be charging.
+            Total house consumption is calculated as P1 net power + solar production + Sessy battery power.
+
+    config SESSY_CAR_CHARGE_STOP_DELAY
+        int "Car charge stop detection delay in minutes"
+        default 2
+        range 1 30
+        help
+            How many minutes power must stay below the threshold before
+            car charging is reported as stopped. This accounts for the
+            gradual ramp-down of EV chargers.
 
     config SESSY_IDLE_AT_SOC_ZERO
         bool "Treat SOC == 0% as Sessy Idle"

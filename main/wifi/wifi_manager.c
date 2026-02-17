@@ -17,6 +17,7 @@ static const char *TAG = "wifi_mgr";
 static wifi_mgr_callback_t s_callback = NULL;
 static bool s_connected = false;
 static char s_sessy_url[128] = {0};
+static char s_p1_url[128] = {0};
 static char s_ip_str[16] = {0};
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_count = 0;
@@ -115,13 +116,21 @@ esp_err_t wifi_manager_discover_sessy(void)
 {
     const settings_t *cfg = settings_get();
 
-    // If a hostname/IP is manually configured, use it directly
-    if (strlen(cfg->sessy_hostname) > 0) {
-        snprintf(s_sessy_url, sizeof(s_sessy_url), "http://%s", cfg->sessy_hostname);
-        ESP_LOGI(TAG, "Using configured Sessy URL: %s", s_sessy_url);
-        if (s_callback) {
-            s_callback(WIFI_MGR_EVENT_SESSY_FOUND, NULL);
-        }
+    // If hostnames are manually configured, use them directly
+    bool manual_dongle = (strlen(cfg->dongle_hostname) > 0);
+    bool manual_p1 = (strlen(cfg->p1_hostname) > 0);
+
+    if (manual_dongle) {
+        snprintf(s_sessy_url, sizeof(s_sessy_url), "http://%s", cfg->dongle_hostname);
+        ESP_LOGI(TAG, "Using configured Dongle URL: %s", s_sessy_url);
+        if (s_callback) s_callback(WIFI_MGR_EVENT_SESSY_FOUND, NULL);
+    }
+    if (manual_p1) {
+        snprintf(s_p1_url, sizeof(s_p1_url), "http://%s", cfg->p1_hostname);
+        ESP_LOGI(TAG, "Using configured P1 URL: %s", s_p1_url);
+        if (s_callback) s_callback(WIFI_MGR_EVENT_P1_FOUND, NULL);
+    }
+    if (manual_dongle && manual_p1) {
         return ESP_OK;
     }
 
@@ -144,53 +153,67 @@ esp_err_t wifi_manager_discover_sessy(void)
         return ESP_ERR_NOT_FOUND;
     }
 
-    // Look for a service with hostname starting with "sessy" and device = "Sessy Dongle"
+    // Look for services with hostname starting with "sessy"
     mdns_result_t *r = results;
-    bool found = false;
+    bool found_dongle = (strlen(s_sessy_url) > 0);
+    bool found_p1 = (strlen(s_p1_url) > 0);
+
     while (r) {
-        if (r->hostname && strncasecmp(r->hostname, "sessy", 5) == 0) {
-            // Check TXT records for device = "Sessy Dongle"
-            bool is_sessy_dongle = false;
+        if (r->hostname && strncasecmp(r->hostname, "sessy", 5) == 0
+            && r->addr && r->addr->addr.type == ESP_IPADDR_TYPE_V4) {
+            // Check TXT records for device type
+            const char *device_type = NULL;
             for (size_t i = 0; i < r->txt_count; i++) {
                 mdns_txt_item_t *txt = &r->txt[i];
                 if (txt->key && strcmp(txt->key, "device") == 0 && txt->value) {
-                    if (strcmp(txt->value, "Sessy Dongle") == 0) {
-                        is_sessy_dongle = true;
-                        break;
-                    }
+                    device_type = txt->value;
+                    break;
                 }
             }
-            
-            if (is_sessy_dongle && r->addr && r->addr->addr.type == ESP_IPADDR_TYPE_V4) {
+
+            if (device_type && strcmp(device_type, "Sessy Dongle") == 0 && !found_dongle) {
                 snprintf(s_sessy_url, sizeof(s_sessy_url), "http://" IPSTR,
                          IP2STR(&r->addr->addr.u_addr.ip4));
-                ESP_LOGI(TAG, "Found Sessy via mDNS: %s (%s)", r->hostname, s_sessy_url);
-                found = true;
-                break;
+                ESP_LOGI(TAG, "Found Sessy Dongle via mDNS: %s (%s)", r->hostname, s_sessy_url);
+                found_dongle = true;
+            } else if (device_type && strcmp(device_type, "Sessy P1 Meter") == 0 && !found_p1) {
+                snprintf(s_p1_url, sizeof(s_p1_url), "http://" IPSTR,
+                         IP2STR(&r->addr->addr.u_addr.ip4));
+                ESP_LOGI(TAG, "Found P1 Meter via mDNS: %s (%s)", r->hostname, s_p1_url);
+                found_p1 = true;
             }
+
+            if (found_dongle && found_p1) break;
         }
         r = r->next;
     }
 
     mdns_query_results_free(results);
 
-    if (found) {
-        if (s_callback) {
+    if (s_callback) {
+        if (found_dongle) {
             s_callback(WIFI_MGR_EVENT_SESSY_FOUND, NULL);
+        } else {
+            s_callback(WIFI_MGR_EVENT_SESSY_NOT_FOUND, NULL);
         }
-        return ESP_OK;
+        if (found_p1) {
+            s_callback(WIFI_MGR_EVENT_P1_FOUND, NULL);
+        } else {
+            s_callback(WIFI_MGR_EVENT_P1_NOT_FOUND, NULL);
+        }
     }
 
-    ESP_LOGW(TAG, "No Sessy device found via mDNS");
-    if (s_callback) {
-        s_callback(WIFI_MGR_EVENT_SESSY_NOT_FOUND, NULL);
-    }
-    return ESP_ERR_NOT_FOUND;
+    return (found_dongle || found_p1) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 const char *wifi_manager_get_sessy_url(void)
 {
     return strlen(s_sessy_url) > 0 ? s_sessy_url : NULL;
+}
+
+const char *wifi_manager_get_p1_url(void)
+{
+    return strlen(s_p1_url) > 0 ? s_p1_url : NULL;
 }
 
 bool wifi_manager_is_connected(void)

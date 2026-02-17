@@ -15,10 +15,14 @@
 #include "LCD_Driver/ST7701S.h"
 #include "Touch/GT911.h"
 
+#include "esp_sntp.h"
+#include <time.h>
+
 #include "app_data.h"
 #include "settings.h"
 #include "wifi_manager.h"
 #include "sessy_api.h"
+#include "p1_api.h"
 #include "ota_server.h"
 #include "log_buffer.h"
 #include "ui_main.h"
@@ -175,6 +179,22 @@ static esp_err_t i2c_bus_init(void)
     return i2c_new_master_bus(&bus_config, &i2c_bus);
 }
 
+/********************* SNTP Time Sync *********************/
+static void sntp_init_time_sync(void)
+{
+    static bool sntp_started = false;
+    if (sntp_started) return;
+    sntp_started = true;
+
+    ESP_LOGI(TAG, "Initializing SNTP");
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+
+    setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+    tzset();
+}
+
 /********************* WiFi Event Callback *********************/
 static void wifi_event_callback(wifi_mgr_event_t event, void *arg)
 {
@@ -184,6 +204,7 @@ static void wifi_event_callback(wifi_mgr_event_t event, void *arg)
         xSemaphoreTake(s_shared_data.mutex, portMAX_DELAY);
         s_shared_data.wifi_connected = true;
         xSemaphoreGive(s_shared_data.mutex);
+        sntp_init_time_sync();
         ota_server_start();
         wifi_manager_discover_sessy();
         break;
@@ -207,6 +228,19 @@ static void wifi_event_callback(wifi_mgr_event_t event, void *arg)
 
     case WIFI_MGR_EVENT_SESSY_NOT_FOUND:
         ESP_LOGW(TAG, "Sessy not found via mDNS, will retry...");
+        break;
+
+    case WIFI_MGR_EVENT_P1_FOUND: {
+        const char *url = wifi_manager_get_p1_url();
+        ESP_LOGI(TAG, "P1 meter found: %s", url ? url : "??");
+        if (url) {
+            p1_api_init(url);
+        }
+        break;
+    }
+
+    case WIFI_MGR_EVENT_P1_NOT_FOUND:
+        ESP_LOGW(TAG, "P1 meter not found via mDNS, will retry...");
         break;
     }
 }
@@ -257,9 +291,11 @@ static void sessy_poll_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         if (!wifi_manager_is_connected() || !wifi_manager_get_sessy_url()) {
-            // Retry mDNS discovery every 10 seconds when Sessy not found
+            // Retry mDNS discovery every 10 seconds when devices not found
             if (wifi_manager_is_connected() && counter % 10 == 0) {
-                wifi_manager_discover_sessy();
+                if (!wifi_manager_get_sessy_url() || !wifi_manager_get_p1_url()) {
+                    wifi_manager_discover_sessy();
+                }
             }
             counter++;
             was_connected = false;
@@ -325,6 +361,70 @@ static void sessy_poll_task(void *arg)
                 data->energy_status = energy;
                 data->energy_status_valid = true;
                 xSemaphoreGive(data->mutex);
+            }
+        }
+
+        // Poll P1 meter (same interval as power status)
+        if (counter % status_interval == 0 && wifi_manager_get_p1_url()) {
+            p1_status_t p1;
+            if (p1_api_get_details(&p1) == ESP_OK) {
+                xSemaphoreTake(data->mutex, portMAX_DELAY);
+                data->p1_status = p1;
+                data->p1_status_valid = true;
+                data->p1_reachable = true;
+                xSemaphoreGive(data->mutex);
+            } else {
+                xSemaphoreTake(data->mutex, portMAX_DELAY);
+                data->p1_reachable = false;
+                xSemaphoreGive(data->mutex);
+            }
+
+            // Car charge detection with asymmetric hysteresis
+            // Start: 3 polls above threshold (~15s)
+            // Stop: configurable delay in minutes (gradual ramp-down)
+            static int car_above_count = 0;
+            static int car_below_count = 0;
+            if (data->power_status_valid && data->p1_status_valid) {
+                // House consumption = P1 net grid + solar production + battery power
+                // P1_total only sees grid flow; solar is consumed internally and
+                // battery discharge/charge shifts power away from/to the grid.
+                int32_t solar_power = data->power_status.phase[0].power
+                                    + data->power_status.phase[1].power
+                                    + data->power_status.phase[2].power;
+                int32_t total = data->p1_status.power_total + solar_power + data->power_status.sessy.power;
+                const settings_t *cfg = settings_get();
+                int32_t threshold = cfg->car_charge_threshold;
+                int stop_polls = (cfg->car_charge_stop_delay * 60 * 1000) / CONFIG_SESSY_POLL_INTERVAL_MS;
+                if (stop_polls < 3) stop_polls = 3;
+
+                if (total > threshold) {
+                    car_above_count++;
+                    car_below_count = 0;
+                } else {
+                    car_below_count++;
+                    car_above_count = 0;
+                }
+
+                bool was_charging = data->car_charging;
+                bool now_charging;
+                if (was_charging) {
+                    // Stay charging until below threshold for stop_delay
+                    now_charging = (car_below_count < stop_polls);
+                } else {
+                    // Start charging after 3 consecutive polls above threshold
+                    now_charging = (car_above_count >= 3);
+                }
+
+                xSemaphoreTake(data->mutex, portMAX_DELAY);
+                data->total_house_power = total;
+                data->car_charging = now_charging;
+                xSemaphoreGive(data->mutex);
+
+                if (now_charging != was_charging) {
+                    ESP_LOGI(TAG, "Car charging %s (house power: %d W, threshold: %d W)",
+                             now_charging ? "DETECTED" : "STOPPED",
+                             (int)total, (int)threshold);
+                }
             }
         }
 

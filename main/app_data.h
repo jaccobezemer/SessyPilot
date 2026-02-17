@@ -2,6 +2,7 @@
 #define APP_DATA_H
 
 #include "sessy_api.h"
+#include "p1_api.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <stdbool.h>
@@ -16,6 +17,15 @@ typedef struct {
     bool                    power_status_valid;
     bool                    energy_status_valid;
     bool                    strategy_valid;
+
+    // P1 meter data
+    p1_status_t             p1_status;
+    bool                    p1_status_valid;
+    bool                    p1_reachable;
+
+    // Car charge detection
+    bool                    car_charging;
+    int32_t                 total_house_power;
 
     // Written by WiFi manager callback, read by both tasks
     bool                    wifi_connected;

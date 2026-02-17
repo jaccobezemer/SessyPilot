@@ -13,18 +13,24 @@
 typedef struct {
     char wifi_ssid[SETTINGS_SSID_MAX_LEN + 1];
     char wifi_password[SETTINGS_PASS_MAX_LEN + 1];
-    char sessy_hostname[SETTINGS_HOSTNAME_MAX_LEN + 1];
+    char dongle_hostname[SETTINGS_HOSTNAME_MAX_LEN + 1];
+    char p1_hostname[SETTINGS_HOSTNAME_MAX_LEN + 1];
     char sessy_username[SETTINGS_SESSY_USER_MAX_LEN + 1];
     char sessy_password[SETTINGS_SESSY_PASS_MAX_LEN + 1];
     bool autoload_soc_zero;
+    int32_t car_charge_threshold;    // W, default 8000
+    int32_t car_charge_stop_delay;   // minutes, default 5
 } settings_t;
 
 esp_err_t settings_init(void);
 const settings_t *settings_get(void);
 esp_err_t settings_set_wifi(const char *ssid, const char *password);
-esp_err_t settings_set_sessy_hostname(const char *hostname);
+esp_err_t settings_set_dongle_hostname(const char *hostname);
+esp_err_t settings_set_p1_hostname(const char *hostname);
 esp_err_t settings_set_sessy_creds(const char *username, const char *password);
 esp_err_t settings_set_autoload_soc_zero(bool enable);
+esp_err_t settings_set_car_charge_threshold(int32_t watts);
+esp_err_t settings_set_car_charge_stop_delay(int32_t minutes);
 esp_err_t settings_reset(void);
 
 #endif

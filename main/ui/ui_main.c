@@ -14,6 +14,7 @@ static lv_obj_t *tabview;
 static lv_obj_t *status_bar_wifi;
 static lv_obj_t *status_bar_ip;
 static lv_obj_t *status_bar_sessy;
+static lv_obj_t *status_bar_p1;
 
 /* OTA overlay widgets */
 static lv_obj_t *ota_overlay = NULL;
@@ -87,7 +88,7 @@ static void ui_refresh_timer_cb(lv_timer_t *timer)
 
     if (xSemaphoreTake(data->mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         if (data->power_status_valid) {
-            ui_status_update(&data->power_status);
+            ui_status_update(&data->power_status, data->total_house_power, data->car_charging);
         }
         if (data->strategy_valid) {
             ui_update_strategy(data->active_strategy);
@@ -95,7 +96,7 @@ static void ui_refresh_timer_cb(lv_timer_t *timer)
         if (data->energy_status_valid) {
             ui_energy_update(&data->energy_status);
         }
-        ui_set_connection_status(data->wifi_connected, data->sessy_reachable);
+        ui_set_connection_status(data->wifi_connected, data->sessy_reachable, data->p1_reachable);
         bool wifi_ok = data->wifi_connected;
         xSemaphoreGive(data->mutex);
 
@@ -150,6 +151,11 @@ void ui_init(app_shared_data_t *shared_data)
     lv_obj_set_style_text_font(status_bar_sessy, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(status_bar_sessy, lv_color_hex(0x888888), 0);
 
+    status_bar_p1 = lv_label_create(status_bar);
+    lv_label_set_text(status_bar_p1, "P1: --");
+    lv_obj_set_style_text_font(status_bar_p1, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(status_bar_p1, lv_color_hex(0x888888), 0);
+
     // Tabview below status bar
     tabview = lv_tabview_create(lv_scr_act(), LV_DIR_BOTTOM, 45);
     lv_obj_set_size(tabview, 480, 480 - 28);
@@ -181,9 +187,9 @@ void ui_init(app_shared_data_t *shared_data)
     ESP_LOGI(TAG, "UI initialized");
 }
 
-void ui_update_status(const sessy_status_response_t *data)
+void ui_update_status(const sessy_status_response_t *data, int32_t house_power, bool car_charging)
 {
-    ui_status_update(data);
+    ui_status_update(data, house_power, car_charging);
 }
 
 void ui_update_strategy(sessy_strategy_t strategy)
@@ -197,7 +203,7 @@ void ui_update_energy(const sessy_energy_response_t *data)
     ui_energy_update(data);
 }
 
-void ui_set_connection_status(bool wifi_ok, bool sessy_ok)
+void ui_set_connection_status(bool wifi_ok, bool sessy_ok, bool p1_ok)
 {
     if (wifi_ok) {
         lv_label_set_text(status_bar_wifi, "WiFi: OK");
@@ -213,5 +219,13 @@ void ui_set_connection_status(bool wifi_ok, bool sessy_ok)
     } else {
         lv_label_set_text(status_bar_sessy, "Sessy: --");
         lv_obj_set_style_text_color(status_bar_sessy, lv_color_hex(0xF44336), 0);
+    }
+
+    if (p1_ok) {
+        lv_label_set_text(status_bar_p1, "P1: OK");
+        lv_obj_set_style_text_color(status_bar_p1, lv_color_hex(0x4CAF50), 0);
+    } else {
+        lv_label_set_text(status_bar_p1, "P1: --");
+        lv_obj_set_style_text_color(status_bar_p1, lv_color_hex(0xF44336), 0);
     }
 }
