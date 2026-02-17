@@ -10,12 +10,16 @@ Lightweight ESP-IDF app that provides a touchscreen UI to monitor and control a 
 
 ## Features
 
-- **mDNS discovery:** only accepts devices advertising TXT field `device = "Sessy Dongle"` (see `main/wifi/wifi_manager.c`).
+- **mDNS discovery:** automatically discovers Sessy Dongle and P1 Meter via mDNS TXT field `device`. Manual hostname/IP override available in Settings.
 - **Sessy API integration:** status, strategy, and energy polling; immediate control from the UI via `sessy_api_*` calls and `sessy_poll_now()` for synchronous refresh.
+- **P1 Meter integration:** polls the Sessy P1 Meter for grid power data (consumed/produced/net).
+- **EV charge detection:** automatically detects electric vehicle charging based on total house consumption (P1 net power + solar production + battery power). Configurable threshold and stop delay with hysteresis to prevent false triggers.
 - **LVGL UI:** screens for Status, Control, Energy, Settings and an Auto Laden page with a large toggle button.
 - **OTA firmware update:** HTTP server on port 8080 accepts firmware uploads with progress overlay on the display.
-- **Runtime-configurable settings:** WiFi credentials, Sessy hostname & API credentials, and optional Sessy Idle behavior at 0% SOC—all configurable from the Settings UI without recompiling.
-- **Status bar:** Shows WiFi status, IP address (center), and Sessy connection status at the top of the screen.
+- **Runtime-configurable settings:** WiFi credentials, Dongle/P1 hostnames, Sessy API credentials, EV charge threshold/delay, and optional Sessy Idle behavior at 0% SOC—all configurable from the Settings UI without recompiling.
+- **Status bar:** Shows WiFi, Sessy, and P1 connection status with IP address at the top of the screen.
+- **NTP time sync:** automatic time synchronization via SNTP after WiFi connects. Log messages show real timestamps (CET/CEST timezone).
+- **Remote logging:** in-memory log buffer accessible via HTTP at `/log` for remote debugging.
 
 ## Quick Build & Flash
 
@@ -58,9 +62,11 @@ curl -X POST http://<device-ip>:8080/ota --data-binary @build/Sessy-Controller.b
 
 ## Settings UI
 
-- **WiFi Credentials:** SSID and Password fields side-by-side (48% width each).
-- **Sessy Hostname:** Optional; leave blank to use mDNS discovery.
-- **Sessy API Credentials:** Username and Password fields side-by-side (from the sticker on the Sessy device).
+- **WiFi Credentials:** SSID and Password fields side-by-side.
+- **Sessy Dongle / P1 Meter Hostname:** Optional hostnames or IPs side-by-side; leave blank to use mDNS discovery.
+- **Sessy API Credentials:** Username and Password fields side-by-side (from the sticker on the Sessy Dongle).
+- **EV Charge Threshold:** Power threshold in Watts above which EV charging is detected (default 8000W).
+- **EV Charge Stop Delay:** Minutes below threshold before charging is reported as stopped (default 2 min), to handle gradual EV charger ramp-down.
 - **Features:** Toggle for "Treat SOC==0% as Sessy Idle" (enables the SOC==0% condition for Auto Laden button).
 - **SAVE/RESET buttons:** SAVE persists changes to NVS flash; RESET restores factory defaults.
 
@@ -81,20 +87,22 @@ curl -X POST http://<device-ip>:8080/ota --data-binary @build/Sessy-Controller.b
 
 ```text
 main/
-├── main.c              # Hardware init, WiFi/UI/polling startup
+├── main.c              # Hardware init, WiFi/UI/polling startup, SNTP, EV detection
 ├── app_data.h          # Shared data struct between tasks
 ├── Kconfig.projbuild   # Menuconfig options
+├── log/                # In-memory log buffer for remote access via HTTP
 ├── ota/                # OTA HTTP server with progress tracking
-├── sessy/              # Sessy REST API client + polling task
-├── settings/           # NVS storage for WiFi/Sessy config
-├── wifi/               # WiFi STA + mDNS discovery
+├── p1/                 # P1 Meter REST API client (no auth)
+├── sessy/              # Sessy Dongle REST API client + polling task
+├── settings/           # NVS storage for WiFi/Sessy/EV config
+├── wifi/               # WiFi STA + mDNS discovery (Dongle + P1 Meter)
 ├── ui/                 # LVGL screens
 │   ├── ui_main.c       # Status bar, tabview, OTA overlay, refresh timer
 │   ├── ui_auto_load.c  # Auto Laden toggle screen
-│   ├── ui_status.c     # Status display
+│   ├── ui_status.c     # Status display (incl. house power + EV charging)
 │   ├── ui_strategy.c   # Strategy control
 │   ├── ui_energy.c     # Energy display
-│   └── ui_settings.c   # Settings form
+│   └── ui_settings.c   # Settings form (WiFi, hostnames, credentials, EV config)
 ├── Touch/GT911.c       # Touch controller driver (I2C master API)
 └── TCA9554PWR/         # I/O expander driver (I2C master API)
 ```
