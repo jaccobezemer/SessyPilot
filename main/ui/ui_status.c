@@ -153,8 +153,9 @@ void ui_status_update(const sessy_status_response_t *data, int32_t house_power, 
     lv_label_set_text(house_power_label, buf);
 
     if (car_charging) {
-        snprintf(buf, sizeof(buf), "Yes (%d W)", (int)house_power);
-        lv_label_set_text(ev_charging_label, buf);
+        // snprintf(buf, sizeof(buf), "Yes (%d W)", (int)house_power);
+        // lv_label_set_text(ev_charging_label, buf);
+        lv_label_set_text(ev_charging_label, "Yes");
         lv_obj_set_style_text_color(ev_charging_label, lv_color_hex(0xFF9800), 0);
     } else {
         lv_label_set_text(ev_charging_label, "No");

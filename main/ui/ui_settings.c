@@ -1,4 +1,5 @@
 #include "ui_settings.h"
+#include "ui_main.h"
 #include "settings.h"
 #include "wifi_manager.h"
 #include "esp_log.h"
@@ -18,6 +19,8 @@ static lv_obj_t *ta_sessy_pass;
 static lv_obj_t *sw_autoload_soc;
 static lv_obj_t *ta_car_thresh;
 static lv_obj_t *ta_car_stop_delay;
+static lv_obj_t *slider_dim;
+static lv_obj_t *lbl_dim_val;
 static lv_obj_t *kb;
 
 static void ta_event_cb(lv_event_t *e)
@@ -40,6 +43,17 @@ static void autoload_soc_cb(lv_event_t *e)
     bool state = lv_obj_has_state(sw, LV_STATE_CHECKED);
     settings_set_autoload_soc_zero(state);
     ESP_LOGI(TAG, "Treat SOC==0%% as Sessy Idle toggle: %s", state ? "enabled" : "disabled");
+}
+
+static void slider_dim_cb(lv_event_t *e)
+{
+    lv_obj_t *slider = lv_event_get_target(e);
+    int32_t val = lv_slider_get_value(slider);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", (int)val);
+    lv_label_set_text(lbl_dim_val, buf);
+    // Live preview — saves on SAVE button
+    ui_set_screen_dim(val);
 }
 
 static void restart_msgbox_cb(lv_event_t *e)
@@ -95,6 +109,9 @@ static void save_btn_cb(lv_event_t *e)
         ESP_LOGW(TAG, "Invalid stop delay value: %d (must be 1-30)", (int)delay_val);
     }
 
+    int32_t dim_val = lv_slider_get_value(slider_dim);
+    settings_set_screen_dim(dim_val);
+
     // Reconnect WiFi with new credentials
     wifi_manager_set_credentials(ssid, pass);
 
@@ -127,6 +144,11 @@ static void reset_msgbox_cb(lv_event_t *e)
         char delay_buf[4];
         snprintf(delay_buf, sizeof(delay_buf), "%d", (int)cfg->car_charge_stop_delay);
         lv_textarea_set_text(ta_car_stop_delay, delay_buf);
+        lv_slider_set_value(slider_dim, cfg->screen_dim, LV_ANIM_OFF);
+        char dim_buf[8];
+        snprintf(dim_buf, sizeof(dim_buf), "%d%%", (int)cfg->screen_dim);
+        lv_label_set_text(lbl_dim_val, dim_buf);
+        ui_set_screen_dim(cfg->screen_dim);
         ESP_LOGI(TAG, "Settings reset to defaults");
     }
 
@@ -428,6 +450,37 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_label_set_text(delay_unit, "min");
     lv_obj_set_style_text_color(delay_unit, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(delay_unit, &lv_font_montserrat_14, 0);
+
+    // ===== Screen Dim row =====
+    lv_obj_t *dim_row = lv_obj_create(parent);
+    lv_obj_set_size(dim_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(dim_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(dim_row, 0, 0);
+    lv_obj_set_style_pad_all(dim_row, 4, 0);
+    lv_obj_set_flex_flow(dim_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(dim_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(dim_row, 8, 0);
+
+    lv_obj_t *dim_lbl = lv_label_create(dim_row);
+    lv_label_set_text(dim_lbl, "Screen dim");
+    lv_obj_set_style_text_color(dim_lbl, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_text_font(dim_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_flex_grow(dim_lbl, 0);
+
+    slider_dim = lv_slider_create(dim_row);
+    lv_slider_set_range(slider_dim, 0, 90);
+    lv_slider_set_value(slider_dim, cfg->screen_dim, LV_ANIM_OFF);
+    lv_obj_set_width(slider_dim, 160);
+    lv_obj_set_flex_grow(slider_dim, 0);
+    lv_obj_add_event_cb(slider_dim, slider_dim_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lbl_dim_val = lv_label_create(dim_row);
+    char dim_init[8];
+    snprintf(dim_init, sizeof(dim_init), "%d%%", (int)cfg->screen_dim);
+    lv_label_set_text(lbl_dim_val, dim_init);
+    lv_obj_set_style_text_color(lbl_dim_val, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(lbl_dim_val, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(lbl_dim_val, 40);
 
     // ===== Spacer (grows to push buttons up) =====
     lv_obj_t *spacer = lv_obj_create(parent);

@@ -186,78 +186,139 @@ static esp_err_t update_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /log — serve recent log output ─────────────────────────── */
-static const char LOG_PAGE_HEAD[] =
+/* ── GET /log — serve log viewer page (uses SSE) ────────────────── */
+static const char LOG_PAGE[] =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Sessy Controller Log</title>"
+    "<title>Sessy Log</title>"
     "<style>"
-    "body{font-family:monospace;background:#1e1e1e;color:#ccc;margin:1em;font-size:13px}"
-    "h2{color:#2196F3}pre{white-space:pre-wrap;word-wrap:break-word}"
-    ".controls{margin-bottom:1em}"
-    "button{background:#2196F3;color:#fff;border:none;padding:6px 16px;"
-    "border-radius:4px;cursor:pointer;margin-right:8px}"
+    "body{margin:0;background:#1e1e1e;color:#ccc;font-family:monospace;font-size:13px}"
+    "#hdr{display:flex;align-items:center;justify-content:space-between;"
+    "padding:8px 12px;background:#2a2a2a;position:sticky;top:0;z-index:1}"
+    "#hdr h2{margin:0;color:#2196F3;font-size:15px}"
+    "#conn{font-size:12px;padding:3px 10px;border-radius:10px;background:#333}"
+    "#log{padding:8px 12px;white-space:pre-wrap;word-break:break-all;min-height:100vh}"
     "</style></head><body>"
-    "<h2>Sessy Controller Log</h2>"
-    "<div class='controls'>"
-    "<button onclick='location.reload()'>Refresh</button>"
-    "<button id='ab' onclick='toggleAuto()'>Auto-refresh: OFF</button></div>"
-    "<pre id='log'>";
-
-static const char LOG_PAGE_TAIL[] =
-    "</pre><script>"
+    "<div id='hdr'><h2>Sessy Controller Log</h2><span id='conn'>Connecting...</span></div>"
+    "<pre id='log'></pre>"
+    "<script>"
     "var C={'31':'#F44336','32':'#4CAF50','33':'#FFB74D','35':'#CE93D8','36':'#4DD0E1'};"
     "function ansi(s){"
     "s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');"
-    "s=s.replace(/\\x1b\\[0;(\\d+)m/g,function(_,c){"
-    "return '<span style=\"color:'+(C[c]||'#ccc')+'\">';});"
+    "s=s.replace(/\\x1b\\[0;(\\d+)m/g,function(_,c){return'<span style=\"color:'+(C[c]||'#ccc')+'\">';});"
     "s=s.replace(/\\x1b\\[0m/g,'</span>');"
     "s=s.replace(/\\x1b\\[[0-9;]*m/g,'');"
     "return s;}"
     "var el=document.getElementById('log');"
-    "el.innerHTML=ansi(el.textContent);"
-    "var ai=0;function toggleAuto(){"
-    "var b=document.getElementById('ab');"
-    "if(ai){clearInterval(ai);ai=0;b.textContent='Auto-refresh: OFF';}"
-    "else{ai=setInterval(function(){fetch('/log/raw')"
-    ".then(function(r){return r.text()})"
-    ".then(function(t){el.innerHTML=ansi(t);"
-    "window.scrollTo(0,document.body.scrollHeight);})},2000);"
-    "b.textContent='Auto-refresh: ON';}}"
+    "var cs=document.getElementById('conn');"
+    "function atBottom(){return(window.innerHeight+window.scrollY)>=document.body.offsetHeight-60;}"
+    "var es=new EventSource('/log/stream');"
+    "es.addEventListener('init',function(e){"
+    "el.innerHTML=ansi(e.data+'\\n');"
+    "window.scrollTo(0,document.body.scrollHeight);"
+    "cs.textContent='Live';cs.style.color='#4CAF50';});"
+    "es.onmessage=function(e){"
+    "if(!e.data)return;"
+    "var sb=atBottom();"
+    "el.innerHTML+=ansi(e.data+'\\n');"
+    "if(sb)window.scrollTo(0,document.body.scrollHeight);};"
+    "es.onerror=function(){cs.textContent='Reconnecting...';cs.style.color='#FF9800';};"
     "</script></body></html>";
 
 static esp_err_t log_get_handler(httpd_req_t *req)
 {
-    char *buf = malloc(LOG_BUFFER_SIZE + 1);
-    if (!buf) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
-        return ESP_FAIL;
-    }
-    log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
-
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send_chunk(req, LOG_PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, LOG_PAGE_TAIL, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    free(buf);
+    httpd_resp_sendstr(req, LOG_PAGE);
     return ESP_OK;
 }
 
-static esp_err_t log_raw_get_handler(httpd_req_t *req)
+/* ── SSE helper: send text as one SSE event ─────────────────────── */
+static esp_err_t send_sse_event(httpd_req_t *req, const char *event_type,
+                                const char *text, int len)
 {
+    esp_err_t ret = ESP_OK;
+    if (event_type) {
+        char hdr[48];
+        snprintf(hdr, sizeof(hdr), "event: %s\n", event_type);
+        ret = httpd_resp_send_chunk(req, hdr, HTTPD_RESP_USE_STRLEN);
+    }
+    /* Prefix each line with "data: " so SSE protocol is correct */
+    const char *p = text;
+    const char *end = text + len;
+    while (p < end && ret == ESP_OK) {
+        const char *nl = memchr(p, '\n', end - p);
+        int line = nl ? (nl - p) : (end - p);
+        ret = httpd_resp_send_chunk(req, "data: ", 6);
+        if (ret == ESP_OK && line > 0)
+            ret = httpd_resp_send_chunk(req, p, line);
+        if (ret == ESP_OK)
+            ret = httpd_resp_send_chunk(req, "\n", 1);
+        p = nl ? nl + 1 : end;
+    }
+    if (ret == ESP_OK)
+        ret = httpd_resp_send_chunk(req, "\n", 1); /* end of SSE event */
+    return ret;
+}
+
+/* ── SSE stream task ─────────────────────────────────────────────── */
+static void log_sse_task(void *arg)
+{
+    httpd_req_t *req = (httpd_req_t *)arg;
+
     char *buf = malloc(LOG_BUFFER_SIZE + 1);
-    if (!buf) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+    if (!buf) goto done;
+
+    /* Send full buffer as initial event */
+    uint32_t pos;
+    log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
+    pos = log_buffer_total();
+    if (send_sse_event(req, "init", buf, strlen(buf)) != ESP_OK) goto done;
+
+    TickType_t last_ka = xTaskGetTickCount();
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        uint32_t new_pos;
+        int len = log_buffer_since(pos, buf, LOG_BUFFER_SIZE + 1, &new_pos);
+        if (len > 0) {
+            pos = new_pos;
+            if (send_sse_event(req, NULL, buf, len) != ESP_OK) break;
+        } else {
+            /* Keepalive comment every 20s to prevent proxy timeouts */
+            if ((xTaskGetTickCount() - last_ka) >= pdMS_TO_TICKS(20000)) {
+                if (httpd_resp_send_chunk(req, ": ka\n\n", 6) != ESP_OK) break;
+                last_ka = xTaskGetTickCount();
+            }
+        }
+    }
+
+done:
+    free(buf);
+    httpd_req_async_handler_complete(req);
+    vTaskDelete(NULL);
+}
+
+/* ── GET /log/stream — SSE endpoint ────────────────────────────── */
+static esp_err_t log_sse_handler(httpd_req_t *req)
+{
+    httpd_req_t *async_req;
+    esp_err_t ret = httpd_req_async_handler_begin(req, &async_req);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "async_handler_begin failed: %s", esp_err_to_name(ret));
         return ESP_FAIL;
     }
-    log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
 
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_sendstr(req, buf);
+    httpd_resp_set_type(async_req, "text/event-stream");
+    httpd_resp_set_hdr(async_req, "Cache-Control", "no-cache");
+    httpd_resp_set_hdr(async_req, "X-Accel-Buffering", "no");
 
-    free(buf);
+    if (xTaskCreate(log_sse_task, "log_sse", 4096, async_req, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create SSE task");
+        httpd_req_async_handler_complete(async_req);
+        return ESP_FAIL;
+    }
+
     return ESP_OK;
 }
 
@@ -299,12 +360,12 @@ esp_err_t ota_server_start(void)
     };
     httpd_register_uri_handler(s_server, &log_uri);
 
-    httpd_uri_t log_raw_uri = {
-        .uri      = "/log/raw",
+    httpd_uri_t log_sse_uri = {
+        .uri      = "/log/stream",
         .method   = HTTP_GET,
-        .handler  = log_raw_get_handler,
+        .handler  = log_sse_handler,
     };
-    httpd_register_uri_handler(s_server, &log_raw_uri);
+    httpd_register_uri_handler(s_server, &log_sse_uri);
 
     ESP_LOGI(TAG, "OTA server started on port 8080");
     return ESP_OK;

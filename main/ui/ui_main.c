@@ -6,6 +6,7 @@
 #include "ui_settings.h"
 #include "ota_server.h"
 #include "wifi_manager.h"
+#include "settings.h"
 #include "esp_log.h"
 
 static const char *TAG = "ui_main";
@@ -181,6 +182,14 @@ void ui_init(app_shared_data_t *shared_data)
     ui_energy_create(tab_energy);
     ui_settings_create(tab_settings, shared_data);
 
+    // Dim overlay: style lv_layer_top() directly so touch events pass through
+    lv_obj_set_style_bg_color(lv_layer_top(), lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_CLICKABLE);
+
+    // Apply saved dim level
+    ui_set_screen_dim(settings_get()->screen_dim);
+
     // Periodic data refresh timer (every 1 second)
     lv_timer_create(ui_refresh_timer_cb, 1000, shared_data);
 
@@ -201,6 +210,14 @@ void ui_update_strategy(sessy_strategy_t strategy)
 void ui_update_energy(const sessy_energy_response_t *data)
 {
     ui_energy_update(data);
+}
+
+void ui_set_screen_dim(int32_t percent)
+{
+    if (percent < 0) percent = 0;
+    if (percent > 90) percent = 90;
+    lv_opa_t opa = (lv_opa_t)((percent * 255) / 100);
+    lv_obj_set_style_bg_opa(lv_layer_top(), opa, 0);
 }
 
 void ui_set_connection_status(bool wifi_ok, bool sessy_ok, bool p1_ok)

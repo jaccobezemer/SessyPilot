@@ -118,6 +118,6 @@ main/
 
 ## Troubleshooting
 
-- **Display drift/horizontal shift:** Ensure PCLK is 14 MHz or lower, bounce buffer is enabled, and `CONFIG_EXAMPLE_DOUBLE_FB` is set.
+- **Display drift/horizontal shift:** Ensure bounce buffer is enabled, and `CONFIG_EXAMPLE_DOUBLE_FB` is set.
 - **Stack overflow on touch:** Main task stack must be at least 8192 bytes (`CONFIG_ESP_MAIN_TASK_STACK_SIZE`).
 - If UI looks incorrect, run a clean build and verify `sdkconfig` and `sdkconfig.defaults` are set as expected.

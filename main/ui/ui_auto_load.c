@@ -106,13 +106,13 @@ void ui_auto_load_update(sessy_strategy_t strategy)
             s_is_active = true;
             lv_obj_add_state(auto_load_btn, LV_STATE_CHECKED);
         }
-        if (btn_label) lv_label_set_text(btn_label, "Auto Laden");
+        if (btn_label) lv_label_set_text(btn_label, "Auto mag laden");
     } else {
         if (s_is_active) {
             s_is_active = false;
             lv_obj_clear_state(auto_load_btn, LV_STATE_CHECKED);
         }
         lv_obj_set_style_bg_color(auto_load_btn, lv_color_hex(0xF44336), 0);
-        if (btn_label) lv_label_set_text(btn_label, "Auto niet laden");
+        if (btn_label) lv_label_set_text(btn_label, "Auto mag niet laden");
     }
 }

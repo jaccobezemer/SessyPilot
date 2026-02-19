@@ -29,6 +29,7 @@ static void load_defaults(void)
 #endif
     s_settings.car_charge_threshold = CONFIG_SESSY_CAR_CHARGE_THRESHOLD;
     s_settings.car_charge_stop_delay = CONFIG_SESSY_CAR_CHARGE_STOP_DELAY;
+    s_settings.screen_dim = CONFIG_SESSY_SCREEN_DIM;
 }
 
 static void load_from_nvs(void)
@@ -86,6 +87,12 @@ static void load_from_nvs(void)
     if (nvs_get_i32(handle, "car_stopd", &stop_delay) == ESP_OK) {
         s_settings.car_charge_stop_delay = stop_delay;
         ESP_LOGI(TAG, "Loaded car charge stop delay from NVS: %d min", (int)stop_delay);
+    }
+
+    int32_t screen_dim = 0;
+    if (nvs_get_i32(handle, "screen_dim", &screen_dim) == ESP_OK) {
+        s_settings.screen_dim = screen_dim;
+        ESP_LOGI(TAG, "Loaded screen dim from NVS: %d%%", (int)screen_dim);
     }
 
     nvs_close(handle);
@@ -335,6 +342,35 @@ esp_err_t settings_set_car_charge_stop_delay(int32_t minutes)
         ESP_LOGI(TAG, "Car charge stop delay saved: %d min", (int)minutes);
     } else {
         ESP_LOGE(TAG, "Failed to save car charge stop delay: %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+esp_err_t settings_set_screen_dim(int32_t percent)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    s_settings.screen_dim = percent;
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret == ESP_OK) {
+        ret = nvs_set_i32(handle, "screen_dim", percent);
+        if (ret == ESP_OK) {
+            ret = nvs_commit(handle);
+        }
+        nvs_close(handle);
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Screen dim saved: %d%%", (int)percent);
+    } else {
+        ESP_LOGE(TAG, "Failed to save screen dim: %s", esp_err_to_name(ret));
     }
 
     return ret;

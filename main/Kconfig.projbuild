@@ -90,6 +90,14 @@ menu "Sessy Controller Configuration"
             car charging is reported as stopped. This accounts for the
             gradual ramp-down of EV chargers.
 
+    config SESSY_SCREEN_DIM
+        int "Screen software dim level (0-90%)"
+        default 30
+        range 0 90
+        help
+            Software overlay dim level as a percentage (0 = no dim, 90 = very dark).
+            Applied on top of the hardware backlight. Adjustable at runtime in Settings.
+
     config SESSY_IDLE_AT_SOC_ZERO
         bool "Treat SOC == 0% as Sessy Idle"
         default y

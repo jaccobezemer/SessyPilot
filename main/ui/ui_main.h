@@ -10,5 +10,6 @@ void ui_update_status(const sessy_status_response_t *data, int32_t house_power, 
 void ui_update_strategy(sessy_strategy_t strategy);
 void ui_update_energy(const sessy_energy_response_t *data);
 void ui_set_connection_status(bool wifi_ok, bool sessy_ok, bool p1_ok);
+void ui_set_screen_dim(int32_t percent);
 
 #endif
