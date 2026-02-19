@@ -75,7 +75,7 @@ menu "Sessy Controller Configuration"
 
     config SESSY_CAR_CHARGE_THRESHOLD
         int "Car charge detection threshold in Watts"
-        default 8000
+        default 9000
         range 500 20000
         help
             Power threshold (Watts) above which a car is assumed to be charging.

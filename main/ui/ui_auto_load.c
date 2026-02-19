@@ -24,14 +24,14 @@ static void auto_load_btn_cb(lv_event_t *e)
         /* Currently IDLE, switch to NOM */
         s_is_active = false;
         new_strategy = STRATEGY_NOM;
-        ESP_LOGI(TAG, "Auto Load disabled, switching to NOM");
+        ESP_LOGI(TAG, "Button pressed: Switching Sessy to NOM, car charging disallowed");
         lv_obj_clear_state(obj, LV_STATE_CHECKED);
         if (btn_label) lv_label_set_text(btn_label, "Auto niet laden");
     } else {
         /* Currently NOM, switch to IDLE */
         s_is_active = true;
         new_strategy = STRATEGY_IDLE;
-        ESP_LOGI(TAG, "Auto Load enabled, switching to IDLE");
+        ESP_LOGI(TAG, "Button pressed: Wwitching Sessy to IDLE, car charging allowed");
         lv_obj_add_state(obj, LV_STATE_CHECKED);
         if (btn_label) lv_label_set_text(btn_label, "Auto Laden");
     }

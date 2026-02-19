@@ -109,6 +109,12 @@ esp_err_t p1_api_get_details(p1_status_t *out)
     if (item) out->power_produced = (int32_t)cJSON_GetNumberValue(item);
     item = cJSON_GetObjectItem(root, "power_total");
     if (item) out->power_total = (int32_t)cJSON_GetNumberValue(item);
+    item = cJSON_GetObjectItem(root, "power_consumed_l1");
+    if (item) out->power_consumed_l1 = (int32_t)cJSON_GetNumberValue(item);
+    item = cJSON_GetObjectItem(root, "power_consumed_l2");
+    if (item) out->power_consumed_l2 = (int32_t)cJSON_GetNumberValue(item);
+    item = cJSON_GetObjectItem(root, "power_consumed_l3");
+    if (item) out->power_consumed_l3 = (int32_t)cJSON_GetNumberValue(item);
 
     cJSON_Delete(root);
     return ESP_OK;

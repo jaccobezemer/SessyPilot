@@ -379,25 +379,30 @@ static void sessy_poll_task(void *arg)
                 xSemaphoreGive(data->mutex);
             }
 
-            // Car charge detection with asymmetric hysteresis
-            // Start: 3 polls above threshold (~15s)
-            // Stop: configurable delay in minutes (gradual ramp-down)
+            // Car charge detection based on per-phase grid consumption.
+            // A 3-phase EV charger draws roughly equal power on all phases.
+            // Start: ALL phases > threshold/3 for 3 consecutive polls.
+            // Stop:  ANY phase  < threshold/3 for stop_delay polls.
             static int car_above_count = 0;
             static int car_below_count = 0;
             if (data->power_status_valid && data->p1_status_valid) {
-                // House consumption = P1 net grid + solar production + battery power
-                // P1_total only sees grid flow; solar is consumed internally and
-                // battery discharge/charge shifts power away from/to the grid.
+                // Total house power for display (P1 net + solar + battery)
                 int32_t solar_power = data->power_status.phase[0].power
                                     + data->power_status.phase[1].power
                                     + data->power_status.phase[2].power;
                 int32_t total = data->p1_status.power_total + solar_power + data->power_status.sessy.power;
+
                 const settings_t *cfg = settings_get();
-                int32_t threshold = cfg->car_charge_threshold;
+                int32_t pt = cfg->car_charge_threshold / 3;  // per-phase threshold
                 int stop_polls = (cfg->car_charge_stop_delay * 60 * 1000) / CONFIG_SESSY_POLL_INTERVAL_MS;
                 if (stop_polls < 3) stop_polls = 3;
 
-                if (total > threshold) {
+                int32_t l1 = data->p1_status.power_consumed_l1;
+                int32_t l2 = data->p1_status.power_consumed_l2;
+                int32_t l3 = data->p1_status.power_consumed_l3;
+                bool all_above = (l1 > pt) && (l2 > pt) && (l3 > pt);
+
+                if (all_above) {
                     car_above_count++;
                     car_below_count = 0;
                 } else {
@@ -408,10 +413,8 @@ static void sessy_poll_task(void *arg)
                 bool was_charging = data->car_charging;
                 bool now_charging;
                 if (was_charging) {
-                    // Stay charging until below threshold for stop_delay
                     now_charging = (car_below_count < stop_polls);
                 } else {
-                    // Start charging after 3 consecutive polls above threshold
                     now_charging = (car_above_count >= 3);
                 }
 
@@ -421,9 +424,9 @@ static void sessy_poll_task(void *arg)
                 xSemaphoreGive(data->mutex);
 
                 if (now_charging != was_charging) {
-                    ESP_LOGI(TAG, "Car charging %s (house power: %d W, threshold: %d W)",
+                    ESP_LOGI(TAG, "Car charging %s (L1:%dW L2:%dW L3:%dW threshold/phase:%dW)",
                              now_charging ? "DETECTED" : "STOPPED",
-                             (int)total, (int)threshold);
+                             (int)l1, (int)l2, (int)l3, (int)pt);
                 }
             }
         }

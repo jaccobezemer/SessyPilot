@@ -86,6 +86,12 @@ static esp_err_t index_get_handler(httpd_req_t *req)
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
+static void ota_restart_cb(void *arg)
+{
+    (void)arg;
+    esp_restart();
+}
+
 /* ── POST /update — receive firmware and flash ──────────────────── */
 static esp_err_t update_post_handler(httpd_req_t *req)
 {
@@ -176,17 +182,21 @@ static esp_err_t update_post_handler(httpd_req_t *req)
 
     /* Schedule reboot via timer so the HTTP response can be sent first */
     const esp_timer_create_args_t restart_args = {
-        .callback = (esp_timer_cb_t)esp_restart,
+        .callback = ota_restart_cb,
         .name = "ota_restart",
     };
     esp_timer_handle_t restart_timer;
-    esp_timer_create(&restart_args, &restart_timer);
-    esp_timer_start_once(restart_timer, 2000 * 1000);  /* 2 seconds */
+    if (esp_timer_create(&restart_args, &restart_timer) == ESP_OK) {
+        esp_timer_start_once(restart_timer, 2000 * 1000);  /* 2 seconds */
+    } else {
+        ESP_LOGE(TAG, "Failed to create restart timer, rebooting immediately");
+        esp_restart();
+    }
 
     return ESP_OK;
 }
 
-/* ── GET /log — serve log viewer page (uses SSE) ────────────────── */
+/* ── GET /log — serve log viewer page (uses WebSocket) ──────────── */
 static const char LOG_PAGE[] =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -212,17 +222,21 @@ static const char LOG_PAGE[] =
     "var el=document.getElementById('log');"
     "var cs=document.getElementById('conn');"
     "function atBottom(){return(window.innerHeight+window.scrollY)>=document.body.offsetHeight-60;}"
-    "var es=new EventSource('/log/stream');"
-    "es.addEventListener('init',function(e){"
-    "el.innerHTML=ansi(e.data+'\\n');"
-    "window.scrollTo(0,document.body.scrollHeight);"
-    "cs.textContent='Live';cs.style.color='#4CAF50';});"
-    "es.onmessage=function(e){"
+    "var first=true;"
+    "function connect(){"
+    "var ws=new WebSocket('ws://'+location.host+'/log/ws');"
+    "ws.onopen=function(){first=true;cs.textContent='Live';cs.style.color='#4CAF50';};"
+    "ws.onmessage=function(e){"
     "if(!e.data)return;"
     "var sb=atBottom();"
-    "el.innerHTML+=ansi(e.data+'\\n');"
+    "if(first){el.innerHTML=ansi(e.data);first=false;}"
+    "else{el.innerHTML+=ansi(e.data);}"
     "if(sb)window.scrollTo(0,document.body.scrollHeight);};"
-    "es.onerror=function(){cs.textContent='Reconnecting...';cs.style.color='#FF9800';};"
+    "ws.onerror=function(){cs.textContent='Error';cs.style.color='#F44336';};"
+    "ws.onclose=function(){cs.textContent='Reconnecting...';cs.style.color='#FF9800';"
+    "setTimeout(connect,3000);};"
+    "}"
+    "connect();"
     "</script></body></html>";
 
 static esp_err_t log_get_handler(httpd_req_t *req)
@@ -232,64 +246,41 @@ static esp_err_t log_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── SSE helper: send text as one SSE event ─────────────────────── */
-static esp_err_t send_sse_event(httpd_req_t *req, const char *event_type,
-                                const char *text, int len)
-{
-    esp_err_t ret = ESP_OK;
-    if (event_type) {
-        char hdr[48];
-        snprintf(hdr, sizeof(hdr), "event: %s\n", event_type);
-        ret = httpd_resp_send_chunk(req, hdr, HTTPD_RESP_USE_STRLEN);
-    }
-    /* Prefix each line with "data: " so SSE protocol is correct */
-    const char *p = text;
-    const char *end = text + len;
-    while (p < end && ret == ESP_OK) {
-        const char *nl = memchr(p, '\n', end - p);
-        int line = nl ? (nl - p) : (end - p);
-        ret = httpd_resp_send_chunk(req, "data: ", 6);
-        if (ret == ESP_OK && line > 0)
-            ret = httpd_resp_send_chunk(req, p, line);
-        if (ret == ESP_OK)
-            ret = httpd_resp_send_chunk(req, "\n", 1);
-        p = nl ? nl + 1 : end;
-    }
-    if (ret == ESP_OK)
-        ret = httpd_resp_send_chunk(req, "\n", 1); /* end of SSE event */
-    return ret;
-}
-
-/* ── SSE stream task ─────────────────────────────────────────────── */
-static void log_sse_task(void *arg)
+/* ── WebSocket log stream task ───────────────────────────────────── */
+static void log_ws_task(void *arg)
 {
     httpd_req_t *req = (httpd_req_t *)arg;
 
     char *buf = malloc(LOG_BUFFER_SIZE + 1);
     if (!buf) goto done;
 
-    /* Send full buffer as initial event */
-    uint32_t pos;
-    log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
-    pos = log_buffer_total();
-    if (send_sse_event(req, "init", buf, strlen(buf)) != ESP_OK) goto done;
-
-    TickType_t last_ka = xTaskGetTickCount();
+    /* Send full log buffer as first WebSocket message */
+    int len = log_buffer_dump(buf, LOG_BUFFER_SIZE + 1);
+    uint32_t pos = log_buffer_total();
+    if (len > 0) {
+        httpd_ws_frame_t pkt = {
+            .final   = true,
+            .type    = HTTPD_WS_TYPE_TEXT,
+            .payload = (uint8_t *)buf,
+            .len     = (size_t)len,
+        };
+        if (httpd_ws_send_frame(req, &pkt) != ESP_OK) goto done;
+    }
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         uint32_t new_pos;
-        int len = log_buffer_since(pos, buf, LOG_BUFFER_SIZE + 1, &new_pos);
+        len = log_buffer_since(pos, buf, LOG_BUFFER_SIZE + 1, &new_pos);
         if (len > 0) {
             pos = new_pos;
-            if (send_sse_event(req, NULL, buf, len) != ESP_OK) break;
-        } else {
-            /* Keepalive comment every 20s to prevent proxy timeouts */
-            if ((xTaskGetTickCount() - last_ka) >= pdMS_TO_TICKS(20000)) {
-                if (httpd_resp_send_chunk(req, ": ka\n\n", 6) != ESP_OK) break;
-                last_ka = xTaskGetTickCount();
-            }
+            httpd_ws_frame_t pkt = {
+                .final   = true,
+                .type    = HTTPD_WS_TYPE_TEXT,
+                .payload = (uint8_t *)buf,
+                .len     = (size_t)len,
+            };
+            if (httpd_ws_send_frame(req, &pkt) != ESP_OK) break;
         }
     }
 
@@ -299,9 +290,16 @@ done:
     vTaskDelete(NULL);
 }
 
-/* ── GET /log/stream — SSE endpoint ────────────────────────────── */
-static esp_err_t log_sse_handler(httpd_req_t *req)
+/* ── GET /log/ws — WebSocket endpoint ──────────────────────────── */
+static esp_err_t log_ws_handler(httpd_req_t *req)
 {
+    if (req->method != HTTP_GET) {
+        /* Incoming frame from client — read and discard */
+        httpd_ws_frame_t pkt = { .type = HTTPD_WS_TYPE_TEXT };
+        httpd_ws_recv_frame(req, &pkt, 0);
+        return ESP_OK;
+    }
+
     httpd_req_t *async_req;
     esp_err_t ret = httpd_req_async_handler_begin(req, &async_req);
     if (ret != ESP_OK) {
@@ -309,12 +307,8 @@ static esp_err_t log_sse_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_type(async_req, "text/event-stream");
-    httpd_resp_set_hdr(async_req, "Cache-Control", "no-cache");
-    httpd_resp_set_hdr(async_req, "X-Accel-Buffering", "no");
-
-    if (xTaskCreate(log_sse_task, "log_sse", 4096, async_req, 5, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create SSE task");
+    if (xTaskCreate(log_ws_task, "log_ws", 4096, async_req, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create WebSocket task");
         httpd_req_async_handler_complete(async_req);
         return ESP_FAIL;
     }
@@ -360,12 +354,13 @@ esp_err_t ota_server_start(void)
     };
     httpd_register_uri_handler(s_server, &log_uri);
 
-    httpd_uri_t log_sse_uri = {
-        .uri      = "/log/stream",
-        .method   = HTTP_GET,
-        .handler  = log_sse_handler,
+    httpd_uri_t log_ws_uri = {
+        .uri          = "/log/ws",
+        .method       = HTTP_GET,
+        .handler      = log_ws_handler,
+        .is_websocket = true,
     };
-    httpd_register_uri_handler(s_server, &log_sse_uri);
+    httpd_register_uri_handler(s_server, &log_ws_uri);
 
     ESP_LOGI(TAG, "OTA server started on port 8080");
     return ESP_OK;
