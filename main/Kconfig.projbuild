@@ -21,6 +21,13 @@ menu "Example Configuration"
 endmenu
 
 menu "Sessy Controller Configuration"
+    config SESSY_HOSTNAME
+        string "Device hostname (mDNS / DHCP)"
+        default "Sessy-Controller"
+        help
+            Hostname of this device on the local network.
+            Visible in router DHCP table and reachable as <hostname>.local via mDNS.
+
     config SESSY_WIFI_SSID
         string "Default WiFi SSID"
         default "MyNetwork"
@@ -97,6 +104,14 @@ menu "Sessy Controller Configuration"
         help
             Software overlay dim level as a percentage (0 = no dim, 90 = very dark).
             Applied on top of the hardware backlight. Adjustable at runtime in Settings.
+
+    config SESSY_SOLAR_MAX_W
+        int "Maximum solar panel output in Watts (arc scale)"
+        default 3000
+        range 500 30000
+        help
+            Maximum solar production capacity in Watts.
+            Used as the full-scale value for the solar arc on the Status screen.
 
     config SESSY_IDLE_AT_SOC_ZERO
         bool "Treat SOC == 0% as Sessy Idle"

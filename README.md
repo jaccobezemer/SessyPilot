@@ -73,8 +73,8 @@ curl -X POST http://<device-ip>:8080/ota --data-binary @build/Sessy-Controller.b
 ## Auto Laden UI behavior
 
 - The Auto Laden screen displays a large toggle button:
-  - When strategy == `IDLE` OR (if enabled) SOC == 0%: button is *active* (green) with label `Auto Laden`.
-  - Otherwise: button is *inactive* (red) with label `Auto niet laden`.
+  - When strategy == `IDLE` OR (if enabled) SOC == 0%: button is *active* (green) with label `Auto mag laden`.
+  - Otherwise: button is *inactive* (red) with label `Auto mag niet laden`.
   - Pressing the button toggles between `IDLE` and `NOM` strategies and refreshes status immediately.
 
 ## Dependencies

@@ -1,10 +1,13 @@
 #include "ui_status.h"
+#include "sdkconfig.h"
 #include "esp_log.h"
 #include <stdio.h>
 
 static lv_obj_t *soc_arc;
 static lv_obj_t *soc_label;
 static lv_obj_t *power_label;
+static lv_obj_t *solar_arc;
+static lv_obj_t *solar_label;
 static lv_obj_t *state_label;
 static lv_obj_t *setpoint_label;
 static lv_obj_t *voltage_label;
@@ -13,6 +16,8 @@ static lv_obj_t *current_label;
 static lv_obj_t *ext_power_label;
 static lv_obj_t *house_power_label;
 static lv_obj_t *ev_charging_label;
+
+#define SOLAR_MAX_W CONFIG_SESSY_SOLAR_MAX_W
 
 static lv_obj_t *create_info_row(lv_obj_t *parent, const char *title, lv_obj_t **value_label)
 {
@@ -43,14 +48,23 @@ void ui_status_create(lv_obj_t *parent)
     lv_obj_set_style_pad_all(parent, 8, 0);
     lv_obj_set_style_pad_gap(parent, 4, 0);
 
-    // SoC Arc section
-    lv_obj_t *arc_cont = lv_obj_create(parent);
-    lv_obj_set_size(arc_cont, 200, 200);
-    lv_obj_set_style_bg_opa(arc_cont, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(arc_cont, 0, 0);
-    lv_obj_set_style_pad_all(arc_cont, 0, 0);
+    // Row container for both arcs side by side
+    lv_obj_t *arcs_row = lv_obj_create(parent);
+    lv_obj_set_size(arcs_row, LV_PCT(100), 205);
+    lv_obj_set_style_bg_opa(arcs_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(arcs_row, 0, 0);
+    lv_obj_set_style_pad_all(arcs_row, 0, 0);
+    lv_obj_set_flex_flow(arcs_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(arcs_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    soc_arc = lv_arc_create(arc_cont);
+    // --- SoC Arc (left) ---
+    lv_obj_t *soc_cont = lv_obj_create(arcs_row);
+    lv_obj_set_size(soc_cont, 200, 200);
+    lv_obj_set_style_bg_opa(soc_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(soc_cont, 0, 0);
+    lv_obj_set_style_pad_all(soc_cont, 0, 0);
+
+    soc_arc = lv_arc_create(soc_cont);
     lv_obj_set_size(soc_arc, 190, 190);
     lv_obj_center(soc_arc);
     lv_arc_set_rotation(soc_arc, 135);
@@ -62,21 +76,60 @@ void ui_status_create(lv_obj_t *parent)
     lv_obj_set_style_arc_width(soc_arc, 15, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(soc_arc, lv_color_hex(0x333333), LV_PART_MAIN);
     lv_obj_set_style_arc_color(soc_arc, lv_color_hex(0x4CAF50), LV_PART_INDICATOR);
-    // Hide the knob
     lv_obj_set_style_bg_opa(soc_arc, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_set_style_pad_all(soc_arc, 0, LV_PART_KNOB);
 
-    soc_label = lv_label_create(arc_cont);
+    soc_label = lv_label_create(soc_cont);
     lv_label_set_text(soc_label, "--%");
     lv_obj_set_style_text_font(soc_label, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_color(soc_label, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(soc_label, LV_ALIGN_CENTER, 0, -15);
 
-    power_label = lv_label_create(arc_cont);
+    power_label = lv_label_create(soc_cont);
     lv_label_set_text(power_label, "-- W");
     lv_obj_set_style_text_font(power_label, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_color(power_label, lv_color_hex(0x4CAF50), 0);
     lv_obj_align(power_label, LV_ALIGN_CENTER, 0, 20);
+
+    lv_obj_t *bat_title = lv_label_create(soc_cont);
+    lv_label_set_text(bat_title, "Battery");
+    lv_obj_set_style_text_font(bat_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(bat_title, lv_color_hex(0x888888), 0);
+    lv_obj_align(bat_title, LV_ALIGN_CENTER, 0, 44);
+
+    // --- Solar Arc (right) ---
+    lv_obj_t *solar_cont = lv_obj_create(arcs_row);
+    lv_obj_set_size(solar_cont, 200, 200);
+    lv_obj_set_style_bg_opa(solar_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(solar_cont, 0, 0);
+    lv_obj_set_style_pad_all(solar_cont, 0, 0);
+
+    solar_arc = lv_arc_create(solar_cont);
+    lv_obj_set_size(solar_arc, 190, 190);
+    lv_obj_center(solar_arc);
+    lv_arc_set_rotation(solar_arc, 135);
+    lv_arc_set_bg_angles(solar_arc, 0, 270);
+    lv_arc_set_range(solar_arc, 0, SOLAR_MAX_W);
+    lv_arc_set_value(solar_arc, 0);
+    lv_obj_clear_flag(solar_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(solar_arc, 15, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(solar_arc, 15, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(solar_arc, lv_color_hex(0x333333), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(solar_arc, lv_color_hex(0xFFD600), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(solar_arc, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(solar_arc, 0, LV_PART_KNOB);
+
+    solar_label = lv_label_create(solar_cont);
+    lv_label_set_text(solar_label, "-- W");
+    lv_obj_set_style_text_font(solar_label, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(solar_label, lv_color_hex(0xFFD600), 0);
+    lv_obj_align(solar_label, LV_ALIGN_CENTER, 0, -5);
+
+    lv_obj_t *solar_title = lv_label_create(solar_cont);
+    lv_label_set_text(solar_title, "Solar");
+    lv_obj_set_style_text_font(solar_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(solar_title, lv_color_hex(0x888888), 0);
+    lv_obj_align(solar_title, LV_ALIGN_CENTER, 0, 22);
 
     // Info grid
     lv_obj_t *grid = lv_obj_create(parent);
@@ -87,17 +140,17 @@ void ui_status_create(lv_obj_t *parent)
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-    create_info_row(grid, "Status",   &state_label);
-    create_info_row(grid, "Voltage",  &voltage_label);
-    create_info_row(grid, "Setpoint", &setpoint_label);
-    create_info_row(grid, "Freq",     &freq_label);
-    create_info_row(grid, "Current",  &current_label);
+    create_info_row(grid, "Status",     &state_label);
+    create_info_row(grid, "Voltage",    &voltage_label);
+    create_info_row(grid, "Setpoint",   &setpoint_label);
+    create_info_row(grid, "Freq",       &freq_label);
+    create_info_row(grid, "Current",    &current_label);
     create_info_row(grid, "Ext. Power", &ext_power_label);
-    create_info_row(grid, "House",     &house_power_label);
-    create_info_row(grid, "EV Charge", &ev_charging_label);
+    create_info_row(grid, "House",      &house_power_label);
+    create_info_row(grid, "EV Charge",  &ev_charging_label);
 }
 
-void ui_status_update(const sessy_status_response_t *data, int32_t house_power, bool car_charging)
+void ui_status_update(const sessy_status_response_t *data, int32_t house_power, bool car_charging, int32_t solar_power)
 {
     if (!data) return;
 
@@ -125,12 +178,22 @@ void ui_status_update(const sessy_status_response_t *data, int32_t house_power, 
 
     snprintf(buf, sizeof(buf), "%d W", (int)data->sessy.power);
     lv_label_set_text(power_label, buf);
-    // Green for generating/charing (negative), red for power delivery (positive)
+    // Green for generating/charging (negative), red for power delivery (positive)
     if (data->sessy.power >= 0) {
         lv_obj_set_style_text_color(power_label, lv_color_hex(0xF44336), 0);
     } else {
         lv_obj_set_style_text_color(power_label, lv_color_hex(0x4CAF50), 0);
     }
+
+    // Solar arc
+    int32_t sp = solar_power < 0 ? 0 : solar_power;
+    if (sp > SOLAR_MAX_W) sp = SOLAR_MAX_W;
+    lv_arc_set_value(solar_arc, (int)sp);
+    snprintf(buf, sizeof(buf), "%d W", (int)solar_power);
+    lv_label_set_text(solar_label, buf);
+    lv_color_t solar_color = (solar_power > 50) ? lv_color_hex(0xFFD600) : lv_color_hex(0x555555);
+    lv_obj_set_style_arc_color(solar_arc, solar_color, LV_PART_INDICATOR);
+    lv_obj_set_style_text_color(solar_label, solar_color, 0);
 
     lv_label_set_text(state_label, sessy_state_to_label(data->sessy.system_state));
 
@@ -153,8 +216,6 @@ void ui_status_update(const sessy_status_response_t *data, int32_t house_power, 
     lv_label_set_text(house_power_label, buf);
 
     if (car_charging) {
-        // snprintf(buf, sizeof(buf), "Yes (%d W)", (int)house_power);
-        // lv_label_set_text(ev_charging_label, buf);
         lv_label_set_text(ev_charging_label, "Yes");
         lv_obj_set_style_text_color(ev_charging_label, lv_color_hex(0xFF9800), 0);
     } else {

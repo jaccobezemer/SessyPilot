@@ -26,14 +26,14 @@ static void auto_load_btn_cb(lv_event_t *e)
         new_strategy = STRATEGY_NOM;
         ESP_LOGI(TAG, "Button pressed: Switching Sessy to NOM, car charging disallowed");
         lv_obj_clear_state(obj, LV_STATE_CHECKED);
-        if (btn_label) lv_label_set_text(btn_label, "Auto niet laden");
+        if (btn_label) lv_label_set_text(btn_label, "Auto mag niet laden");
     } else {
         /* Currently NOM, switch to IDLE */
         s_is_active = true;
         new_strategy = STRATEGY_IDLE;
-        ESP_LOGI(TAG, "Button pressed: Wwitching Sessy to IDLE, car charging allowed");
+        ESP_LOGI(TAG, "Button pressed: Switching Sessy to IDLE, car charging allowed");
         lv_obj_add_state(obj, LV_STATE_CHECKED);
-        if (btn_label) lv_label_set_text(btn_label, "Auto Laden");
+        if (btn_label) lv_label_set_text(btn_label, "Auto mag Laden");
     }
 
     if (sessy_api_set_strategy(new_strategy) == ESP_OK) {
@@ -56,7 +56,7 @@ void ui_auto_load_create(lv_obj_t *parent, app_shared_data_t *shared_data)
 
     /* Big toggle button */
     auto_load_btn = lv_btn_create(parent);
-    lv_obj_set_size(auto_load_btn, 300, 150);
+    lv_obj_set_size(auto_load_btn, 350, 150);
     lv_obj_set_style_radius(auto_load_btn, 16, 0);
     lv_obj_set_style_bg_color(auto_load_btn, lv_color_hex(0xF44336), 0); /* red */
     lv_obj_set_style_bg_color(auto_load_btn, lv_color_hex(0x4CAF50), LV_STATE_CHECKED); /* green when checked */
@@ -77,7 +77,7 @@ void ui_auto_load_create(lv_obj_t *parent, app_shared_data_t *shared_data)
 
     lv_obj_t *btn_label_temp = lv_label_create(auto_load_btn);
     btn_label = btn_label_temp;
-    lv_label_set_text(btn_label, "Auto niet laden");
+    lv_label_set_text(btn_label, "Auto mag niet laden");
     lv_obj_set_style_text_font(btn_label, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_color(btn_label, lv_color_hex(0xFFFFFF), 0);
     lv_obj_center(btn_label);
