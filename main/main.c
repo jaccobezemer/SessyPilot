@@ -385,6 +385,7 @@ static void sessy_poll_task(void *arg)
             // Stop:  ANY phase  < threshold/3 for stop_delay polls.
             static int car_above_count = 0;
             static int car_below_count = 0;
+            static int32_t s_ev_last_logged_w = 0;
             if (data->power_status_valid && data->p1_status_valid) {
                 // Total house power for display (P1 net + solar + battery)
                 int32_t solar_power = data->power_status.phase[0].power
@@ -405,6 +406,7 @@ static void sessy_poll_task(void *arg)
                 if (all_above) {
                     car_above_count++;
                     car_below_count = 0;
+                    s_ev_last_logged_w = 0;
                 } else {
                     car_below_count++;
                     car_above_count = 0;
@@ -416,6 +418,20 @@ static void sessy_poll_task(void *arg)
                     now_charging = (car_below_count < stop_polls);
                 } else {
                     now_charging = (car_above_count >= 3);
+                }
+
+                // Log on first poll below threshold, then every 500W further drop
+                if (was_charging && !all_above) {
+                    int32_t phase_total = l1 + l2 + l3;
+                    if (car_below_count == 1) {
+                        ESP_LOGI(TAG, "EV afbouw start: %dW (L1:%dW L2:%dW L3:%dW drempel:%dW)",
+                                 (int)phase_total, (int)l1, (int)l2, (int)l3, (int)(pt * 3));
+                        s_ev_last_logged_w = phase_total;
+                    } else if (phase_total <= s_ev_last_logged_w - 500) {
+                        ESP_LOGI(TAG, "EV afbouw: %dW (L1:%dW L2:%dW L3:%dW)",
+                                 (int)phase_total, (int)l1, (int)l2, (int)l3);
+                        s_ev_last_logged_w = phase_total;
+                    }
                 }
 
                 xSemaphoreTake(data->mutex, portMAX_DELAY);

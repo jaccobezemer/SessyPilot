@@ -92,7 +92,9 @@ static void ui_refresh_timer_cb(lv_timer_t *timer)
             int32_t solar_power = data->power_status.phase[0].power
                                 + data->power_status.phase[1].power
                                 + data->power_status.phase[2].power;
-            ui_status_update(&data->power_status, data->total_house_power, data->car_charging, solar_power);
+            int32_t grid_power = data->p1_status_valid ? data->p1_status.power_total : 0;
+            ui_status_update(&data->power_status, data->total_house_power, data->car_charging,
+                             solar_power, grid_power);
         }
         if (data->strategy_valid) {
             ui_update_strategy(data->active_strategy);
@@ -199,9 +201,10 @@ void ui_init(app_shared_data_t *shared_data)
     ESP_LOGI(TAG, "UI initialized");
 }
 
-void ui_update_status(const sessy_status_response_t *data, int32_t house_power, bool car_charging, int32_t solar_power)
+void ui_update_status(const sessy_status_response_t *data, int32_t house_power, bool car_charging,
+                      int32_t solar_power, int32_t grid_power)
 {
-    ui_status_update(data, house_power, car_charging, solar_power);
+    ui_status_update(data, house_power, car_charging, solar_power, grid_power);
 }
 
 void ui_update_strategy(sessy_strategy_t strategy)
