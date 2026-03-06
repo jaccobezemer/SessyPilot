@@ -32,7 +32,11 @@ static lv_obj_t *ev_charging_label;
 
 #define SOLAR_MAX_W CONFIG_SESSY_SOLAR_MAX_W
 #define HOUSE_MAX_W 17250   // 3 × 25A × 230V
-#define GRID_MAX_W  5000
+// #define GRID_MAX_W  5000
+#define GRID_SCALE_MIN   -100
+#define GRID_SCALE_MAX    100
+#define GRID_MAX_EXPORT  3750
+#define GRID_MAX_IMPORT  12500 //17250
 
 // 2×2 grid: each cell is half the screen wide, QUAD_H tall
 // Screen tab content: 407px. Info row ~42px. Gaps/padding ~8px. Left for arcs: ~357px → 178 per row.
@@ -164,12 +168,12 @@ void ui_status_create(lv_obj_t *parent)
     lv_obj_t *house_cont = create_quad(arcs_grid);
     lv_obj_set_grid_cell(house_cont, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
 
-    house_arc = create_arc(house_cont, lv_color_hex(0x4CAF50), HOUSE_MAX_W);
+    house_arc = create_arc(house_cont, lv_color_hex(0xFF9800), HOUSE_MAX_W);
 
     house_label = lv_label_create(house_cont);
     lv_label_set_text(house_label, "-- W");
     lv_obj_set_style_text_font(house_label, &lv_font_montserrat_22, 0);
-    lv_obj_set_style_text_color(house_label, lv_color_hex(0x4CAF50), 0);
+    lv_obj_set_style_text_color(house_label, lv_color_hex(0xFF9800), 0);
     lv_obj_align(house_label, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t *house_title = lv_label_create(house_cont);
@@ -190,19 +194,36 @@ void ui_status_create(lv_obj_t *parent)
     lv_obj_set_style_shadow_width(grid_meter, 0, 0);
     lv_obj_set_style_pad_all(grid_meter, 4, 0);
 
+    // lv_meter_scale_t *scale = lv_meter_add_scale(grid_meter);
+    // lv_meter_set_scale_range(grid_meter, scale, -GRID_MAX_W, GRID_MAX_W, 270, 135);
+    // lv_meter_set_scale_ticks(grid_meter, scale, 2, 0, 0, lv_color_black());
+
+    // // Green arc: export to grid (left side, negative values)
+    // lv_meter_indicator_t *arc_export = lv_meter_add_arc(grid_meter, scale, ARC_PW, lv_color_hex(0x4CAF50), 0);
+    // lv_meter_set_indicator_start_value(grid_meter, arc_export, -GRID_MAX_W);
+    // lv_meter_set_indicator_end_value(grid_meter, arc_export, 0);
+
+    // // Red arc: import from grid (right side, positive values)
+    // lv_meter_indicator_t *arc_import = lv_meter_add_arc(grid_meter, scale, ARC_PW, lv_color_hex(0xF44336), 0);
+    // lv_meter_set_indicator_start_value(grid_meter, arc_import, 0);
+    // lv_meter_set_indicator_end_value(grid_meter, arc_import, GRID_MAX_W);
+
+    // grid_needle = lv_meter_add_needle_line(grid_meter, scale, 2, lv_color_hex(0xFFFFFF), -8);
+    // lv_meter_set_indicator_value(grid_meter, grid_needle, 0);
+
     lv_meter_scale_t *scale = lv_meter_add_scale(grid_meter);
-    lv_meter_set_scale_range(grid_meter, scale, -GRID_MAX_W, GRID_MAX_W, 270, 135);
+    lv_meter_set_scale_range(grid_meter, scale, GRID_SCALE_MIN, GRID_SCALE_MAX, 270, 135);
     lv_meter_set_scale_ticks(grid_meter, scale, 2, 0, 0, lv_color_black());
 
-    // Green arc: export to grid (left side, negative values)
+    // Green arc: export (links, negatief)
     lv_meter_indicator_t *arc_export = lv_meter_add_arc(grid_meter, scale, ARC_PW, lv_color_hex(0x4CAF50), 0);
-    lv_meter_set_indicator_start_value(grid_meter, arc_export, -GRID_MAX_W);
+    lv_meter_set_indicator_start_value(grid_meter, arc_export, GRID_SCALE_MIN);
     lv_meter_set_indicator_end_value(grid_meter, arc_export, 0);
 
-    // Red arc: import from grid (right side, positive values)
+    // Red arc: import (rechts, positief)
     lv_meter_indicator_t *arc_import = lv_meter_add_arc(grid_meter, scale, ARC_PW, lv_color_hex(0xF44336), 0);
     lv_meter_set_indicator_start_value(grid_meter, arc_import, 0);
-    lv_meter_set_indicator_end_value(grid_meter, arc_import, GRID_MAX_W);
+    lv_meter_set_indicator_end_value(grid_meter, arc_import, GRID_SCALE_MAX);
 
     grid_needle = lv_meter_add_needle_line(grid_meter, scale, 2, lv_color_hex(0xFFFFFF), -8);
     lv_meter_set_indicator_value(grid_meter, grid_needle, 0);
@@ -211,7 +232,7 @@ void ui_status_create(lv_obj_t *parent)
     lv_label_set_text(grid_value_label, "0 W");
     lv_obj_set_style_text_font(grid_value_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(grid_value_label, lv_color_hex(0x888888), 0);
-    lv_obj_align(grid_value_label, LV_ALIGN_CENTER, 0, 12);
+    lv_obj_align(grid_value_label, LV_ALIGN_CENTER, 0, 14);
 
     lv_obj_t *grid_title = lv_label_create(grid_cont);
     lv_label_set_text(grid_title, "Grid");
@@ -238,6 +259,20 @@ void ui_status_create(lv_obj_t *parent)
     // create_info_col(info_row, "Current",  &current_label);   // remarked
 }
 
+static int32_t grid_normalize(int32_t watt) {
+    if (watt < 0) {
+        // Export: negatieve watt, max 3750W
+        int32_t val = (watt * 100) / GRID_MAX_EXPORT;
+        if (val < GRID_SCALE_MIN) val = GRID_SCALE_MIN;
+        return val;
+    } else {
+        // Import: positieve watt, max 17250W
+        int32_t val = (watt * 100) / GRID_MAX_IMPORT;
+        if (val > GRID_SCALE_MAX) val = GRID_SCALE_MAX;
+        return val;
+    }
+}
+
 void ui_status_update(const sessy_status_response_t *data, int32_t house_power, bool car_charging,
                       int32_t solar_power, int32_t grid_power)
 {
@@ -260,7 +295,7 @@ void ui_status_update(const sessy_status_response_t *data, int32_t house_power, 
     snprintf(buf, sizeof(buf), "%d%%", soc_pct);
     lv_label_set_text(soc_label, buf);
 
-    snprintf(buf, sizeof(buf), "%d W", (int)data->sessy.power);
+    snprintf(buf, sizeof(buf), "%d W", (int)(-data->sessy.power));
     lv_label_set_text(power_label, buf);
     lv_obj_set_style_text_color(power_label,
         data->sessy.power >= 0 ? lv_color_hex(0xF44336) : lv_color_hex(0x4CAF50), 0);
@@ -280,15 +315,18 @@ void ui_status_update(const sessy_status_response_t *data, int32_t house_power, 
     snprintf(buf, sizeof(buf), "%d W", (int)house_power);
     lv_label_set_text(house_label, buf);
     lv_color_t house_color;
-    if (house_power < 5000)       house_color = lv_color_hex(0x4CAF50);
-    else if (house_power < 10000) house_color = lv_color_hex(0xFF9800);
-    else                          house_color = lv_color_hex(0xF44336);
+    if (house_power < 5750)       house_color = lv_color_hex(0xFFB74D); // licht oranje
+    else if (house_power < 11500) house_color = lv_color_hex(0xFF9800); // oranje
+    else                          house_color = lv_color_hex(0xF44336); // rood
     lv_obj_set_style_arc_color(house_arc, house_color, LV_PART_INDICATOR);
     lv_obj_set_style_text_color(house_label, house_color, 0);
 
     // ── Grid meter ───────────────────────────────────────────────────────────
-    int32_t gp = grid_power < -GRID_MAX_W ? -GRID_MAX_W : (grid_power > GRID_MAX_W ? GRID_MAX_W : grid_power);
-    lv_meter_set_indicator_value(grid_meter, grid_needle, (int)gp);
+    // int32_t gp = grid_power < -GRID_MAX_W ? -GRID_MAX_W : (grid_power > GRID_MAX_W ? GRID_MAX_W : grid_power);
+    // lv_meter_set_indicator_value(grid_meter, grid_needle, (int)gp);
+    int32_t norm = grid_normalize(grid_power);
+    lv_meter_set_indicator_value(grid_meter, grid_needle, norm);
+
     if (grid_power > 0) {
         snprintf(buf, sizeof(buf), "+%d W", (int)grid_power);
         lv_obj_set_style_text_color(grid_value_label, lv_color_hex(0xF44336), 0);

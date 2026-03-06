@@ -17,6 +17,7 @@ static lv_obj_t *ta_p1_host;
 static lv_obj_t *ta_sessy_user;
 static lv_obj_t *ta_sessy_pass;
 static lv_obj_t *sw_autoload_soc;
+static lv_obj_t *sw_ev_auto_idle;
 static lv_obj_t *ta_car_thresh;
 static lv_obj_t *ta_car_stop_delay;
 static lv_obj_t *slider_dim;
@@ -43,6 +44,14 @@ static void autoload_soc_cb(lv_event_t *e)
     bool state = lv_obj_has_state(sw, LV_STATE_CHECKED);
     settings_set_autoload_soc_zero(state);
     ESP_LOGI(TAG, "Treat SOC==0%% as Sessy Idle toggle: %s", state ? "enabled" : "disabled");
+}
+
+static void ev_auto_idle_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    settings_set_ev_auto_idle(state);
+    ESP_LOGI(TAG, "EV auto-idle toggle: %s", state ? "enabled" : "disabled");
 }
 
 static void slider_dim_cb(lv_event_t *e)
@@ -76,47 +85,90 @@ static void restart_btn_cb(lv_event_t *e)
     lv_obj_add_event_cb(msgbox, restart_msgbox_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
+static struct {
+    char ssid[SETTINGS_SSID_MAX_LEN + 1];
+    char pass[SETTINGS_PASS_MAX_LEN + 1];
+    char dongle_host[SETTINGS_HOSTNAME_MAX_LEN + 1];
+    char p1_host[SETTINGS_HOSTNAME_MAX_LEN + 1];
+    char sessy_user[SETTINGS_SESSY_USER_MAX_LEN + 1];
+    char sessy_pass[SETTINGS_SESSY_PASS_MAX_LEN + 1];
+    int32_t car_thresh;   // -1 = invalid/skip
+    int32_t stop_delay;   // -1 = invalid/skip
+    int32_t dim_val;
+} s_pending_save;
+
+static lv_obj_t *s_save_overlay = NULL;
+
+static void do_save_cb(lv_timer_t *timer)
+{
+    settings_set_wifi(s_pending_save.ssid, s_pending_save.pass);
+    settings_set_dongle_hostname(s_pending_save.dongle_host);
+    settings_set_p1_hostname(s_pending_save.p1_host);
+    settings_set_sessy_creds(s_pending_save.sessy_user, s_pending_save.sessy_pass);
+    if (s_pending_save.car_thresh >= 0) {
+        settings_set_car_charge_threshold(s_pending_save.car_thresh);
+    }
+    if (s_pending_save.stop_delay >= 0) {
+        settings_set_car_charge_stop_delay(s_pending_save.stop_delay);
+    }
+    settings_set_screen_dim(s_pending_save.dim_val);
+    wifi_manager_set_credentials(s_pending_save.ssid, s_pending_save.pass);
+    wifi_manager_discover_sessy();
+
+    if (s_save_overlay) {
+        lv_obj_del(s_save_overlay);
+        s_save_overlay = NULL;
+    }
+    lv_timer_del(timer);
+}
+
 static void save_btn_cb(lv_event_t *e)
 {
-    const char *ssid = lv_textarea_get_text(ta_ssid);
-    const char *pass = lv_textarea_get_text(ta_pass);
-    const char *dongle_host = lv_textarea_get_text(ta_dongle_host);
-    const char *p1_host = lv_textarea_get_text(ta_p1_host);
-    const char *sessy_user = lv_textarea_get_text(ta_sessy_user);
-    const char *sessy_pass = lv_textarea_get_text(ta_sessy_pass);
+    strlcpy(s_pending_save.ssid, lv_textarea_get_text(ta_ssid), sizeof(s_pending_save.ssid));
+    strlcpy(s_pending_save.pass, lv_textarea_get_text(ta_pass), sizeof(s_pending_save.pass));
+    strlcpy(s_pending_save.dongle_host, lv_textarea_get_text(ta_dongle_host), sizeof(s_pending_save.dongle_host));
+    strlcpy(s_pending_save.p1_host, lv_textarea_get_text(ta_p1_host), sizeof(s_pending_save.p1_host));
+    strlcpy(s_pending_save.sessy_user, lv_textarea_get_text(ta_sessy_user), sizeof(s_pending_save.sessy_user));
+    strlcpy(s_pending_save.sessy_pass, lv_textarea_get_text(ta_sessy_pass), sizeof(s_pending_save.sessy_pass));
 
-    ESP_LOGI(TAG, "Saving settings: SSID=%s, Dongle=%s, P1=%s, User=%s", ssid, dongle_host, p1_host, sessy_user);
-
-    settings_set_wifi(ssid, pass);
-    settings_set_dongle_hostname(dongle_host);
-    settings_set_p1_hostname(p1_host);
-    settings_set_sessy_creds(sessy_user, sessy_pass);
-
-    // Save car charge settings
-    const char *thresh_str = lv_textarea_get_text(ta_car_thresh);
-    int32_t thresh_val = atoi(thresh_str);
-    if (thresh_val >= 500 && thresh_val <= 20000) {
-        settings_set_car_charge_threshold(thresh_val);
-    } else {
+    int32_t thresh_val = atoi(lv_textarea_get_text(ta_car_thresh));
+    s_pending_save.car_thresh = (thresh_val >= 500 && thresh_val <= 20000) ? thresh_val : -1;
+    if (s_pending_save.car_thresh < 0) {
         ESP_LOGW(TAG, "Invalid threshold value: %d (must be 500-20000)", (int)thresh_val);
     }
 
-    const char *delay_str = lv_textarea_get_text(ta_car_stop_delay);
-    int32_t delay_val = atoi(delay_str);
-    if (delay_val >= 1 && delay_val <= 30) {
-        settings_set_car_charge_stop_delay(delay_val);
-    } else {
+    int32_t delay_val = atoi(lv_textarea_get_text(ta_car_stop_delay));
+    s_pending_save.stop_delay = (delay_val >= 1 && delay_val <= 30) ? delay_val : -1;
+    if (s_pending_save.stop_delay < 0) {
         ESP_LOGW(TAG, "Invalid stop delay value: %d (must be 1-30)", (int)delay_val);
     }
 
-    int32_t dim_val = lv_slider_get_value(slider_dim);
-    settings_set_screen_dim(dim_val);
+    s_pending_save.dim_val = lv_slider_get_value(slider_dim);
 
-    // Reconnect WiFi with new credentials
-    wifi_manager_set_credentials(ssid, pass);
+    ESP_LOGI(TAG, "Saving settings: SSID=%s, Dongle=%s, P1=%s, User=%s",
+             s_pending_save.ssid, s_pending_save.dongle_host,
+             s_pending_save.p1_host, s_pending_save.sessy_user);
 
-    // Trigger Sessy re-discovery
-    wifi_manager_discover_sessy();
+    // Show dimmed overlay with spinner so the user sees feedback immediately
+    s_save_overlay = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(s_save_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(s_save_overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(s_save_overlay, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(s_save_overlay, 0, 0);
+    lv_obj_clear_flag(s_save_overlay, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *spinner = lv_spinner_create(s_save_overlay, 1000, 60);
+    lv_obj_set_size(spinner, 64, 64);
+    lv_obj_align(spinner, LV_ALIGN_CENTER, 0, -16);
+
+    lv_obj_t *lbl = lv_label_create(s_save_overlay);
+    lv_label_set_text(lbl, "Opslaan...");
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 30);
+
+    // Defer actual save so LVGL can render the overlay first
+    lv_timer_create(do_save_cb, 30, NULL);
 }
 
 static void reset_msgbox_cb(lv_event_t *e)
@@ -137,6 +189,11 @@ static void reset_msgbox_cb(lv_event_t *e)
             lv_obj_add_state(sw_autoload_soc, LV_STATE_CHECKED);
         } else {
             lv_obj_clear_state(sw_autoload_soc, LV_STATE_CHECKED);
+        }
+        if (cfg->ev_auto_idle) {
+            lv_obj_add_state(sw_ev_auto_idle, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(sw_ev_auto_idle, LV_STATE_CHECKED);
         }
         char thresh_buf[8];
         snprintf(thresh_buf, sizeof(thresh_buf), "%d", (int)cfg->car_charge_threshold);
@@ -390,6 +447,29 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_set_style_text_font(restart_lbl, &lv_font_montserrat_12, 0);
     lv_obj_center(restart_lbl);
     lv_obj_add_event_cb(restart_btn, restart_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    // ===== EV auto-idle feature row =====
+    lv_obj_t *ev_idle_row = lv_obj_create(parent);
+    lv_obj_set_size(ev_idle_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(ev_idle_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ev_idle_row, 0, 0);
+    lv_obj_set_style_pad_all(ev_idle_row, 0, 0);
+    lv_obj_set_style_pad_right(ev_idle_row, 5, 0);
+    lv_obj_set_flex_flow(ev_idle_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(ev_idle_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(ev_idle_row, 8, 0);
+
+    lv_obj_t *ev_idle_lbl = lv_label_create(ev_idle_row);
+    lv_label_set_text(ev_idle_lbl, "Auto-idle bij EV laden:");
+    lv_obj_set_style_text_color(ev_idle_lbl, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_text_font(ev_idle_lbl, &lv_font_montserrat_14, 0);
+
+    sw_ev_auto_idle = lv_switch_create(ev_idle_row);
+    lv_obj_set_size(sw_ev_auto_idle, 40, 24);
+    if (cfg->ev_auto_idle) {
+        lv_obj_add_state(sw_ev_auto_idle, LV_STATE_CHECKED);
+    }
+    lv_obj_add_event_cb(sw_ev_auto_idle, ev_auto_idle_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // ===== EV detect threshold row =====
     lv_obj_t *thresh_row = lv_obj_create(parent);

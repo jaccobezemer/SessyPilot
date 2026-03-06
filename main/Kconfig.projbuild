@@ -120,4 +120,12 @@ menu "Sessy Controller Configuration"
             When enabled, the Auto Laden button is shown as active (green)
             when the Sessy state-of-charge is 0% in addition to when the
             strategy is IDLE. Can be toggled via the SDK Configuration Editor.
+
+    config SESSY_EV_AUTO_IDLE
+        bool "Auto-idle battery when EV charging is detected"
+        default n
+        help
+            When enabled, the Sessy battery is automatically set to IDLE
+            when EV charging is detected. The previous strategy is restored
+            when charging stops. Can be toggled via the Settings screen.
 endmenu

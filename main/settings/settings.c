@@ -27,6 +27,11 @@ static void load_defaults(void)
 #else
     s_settings.autoload_soc_zero = false;
 #endif
+#ifdef CONFIG_SESSY_EV_AUTO_IDLE
+    s_settings.ev_auto_idle = true;
+#else
+    s_settings.ev_auto_idle = false;
+#endif
     s_settings.car_charge_threshold = CONFIG_SESSY_CAR_CHARGE_THRESHOLD;
     s_settings.car_charge_stop_delay = CONFIG_SESSY_CAR_CHARGE_STOP_DELAY;
     s_settings.screen_dim = CONFIG_SESSY_SCREEN_DIM;
@@ -75,6 +80,12 @@ static void load_from_nvs(void)
     if (nvs_get_u8(handle, "autoload_soc", &autoload_soc) == ESP_OK) {
         s_settings.autoload_soc_zero = (autoload_soc != 0);
         ESP_LOGI(TAG, "Loaded 'Treat SOC==0%% as Sessy Idle' setting from NVS");
+    }
+
+    uint8_t ev_auto_idle = 0;
+    if (nvs_get_u8(handle, "ev_auto_idle", &ev_auto_idle) == ESP_OK) {
+        s_settings.ev_auto_idle = (ev_auto_idle != 0);
+        ESP_LOGI(TAG, "Loaded 'EV auto-idle' setting from NVS: %d", s_settings.ev_auto_idle);
     }
 
     int32_t car_thresh = 0;
@@ -284,6 +295,36 @@ esp_err_t settings_set_autoload_soc_zero(bool enable)
         ESP_LOGI(TAG, "Settings saved: Treat SOC==0%% as Sessy Idle = %d", enable);
     } else {
         ESP_LOGE(TAG, "Failed to save 'Treat SOC==0%% as Sessy Idle': %s", esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+esp_err_t settings_set_ev_auto_idle(bool enable)
+{
+    if (!s_initialized) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    s_settings.ev_auto_idle = enable;
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret == ESP_OK) {
+        uint8_t value = enable ? 1 : 0;
+        ret = nvs_set_u8(handle, "ev_auto_idle", value);
+        if (ret == ESP_OK) {
+            ret = nvs_commit(handle);
+        }
+        nvs_close(handle);
+    }
+
+    xSemaphoreGive(s_mutex);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Settings saved: EV auto-idle = %d", enable);
+    } else {
+        ESP_LOGE(TAG, "Failed to save EV auto-idle: %s", esp_err_to_name(ret));
     }
 
     return ret;

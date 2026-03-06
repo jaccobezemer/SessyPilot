@@ -401,6 +401,7 @@ static void sessy_poll_task(void *arg)
                 int32_t l1 = data->p1_status.power_consumed_l1;
                 int32_t l2 = data->p1_status.power_consumed_l2;
                 int32_t l3 = data->p1_status.power_consumed_l3;
+                int32_t phase_total = l1 + l2 + l3;
                 bool all_above = (l1 > pt) && (l2 > pt) && (l3 > pt);
 
                 if (all_above) {
@@ -415,14 +416,24 @@ static void sessy_poll_task(void *arg)
                 bool was_charging = data->car_charging;
                 bool now_charging;
                 if (was_charging) {
-                    now_charging = (car_below_count < stop_polls);
+                    // Instant stop: totaalvermogen zakt ineens onder de per-fase drempel
+                    // → handmatig gestopt, geen ramp-down afwachten
+                    if (phase_total < pt) {
+                        now_charging = false;
+                        if (car_below_count == 1) {
+                            ESP_LOGI(TAG, "EV instant stop: %dW (L1:%dW L2:%dW L3:%dW drempel:%dW)",
+                                     (int)phase_total, (int)l1, (int)l2, (int)l3, (int)(pt * 3));
+                        }
+                    } else {
+                        // Geleidelijke afbouw: wacht stop_polls voor zekerheid
+                        now_charging = (car_below_count < stop_polls);
+                    }
                 } else {
                     now_charging = (car_above_count >= 3);
                 }
 
-                // Log on first poll below threshold, then every 500W further drop
-                if (was_charging && !all_above) {
-                    int32_t phase_total = l1 + l2 + l3;
+                // Log ramp-down: eerste poll onder drempel, daarna elke 500W
+                if (was_charging && !all_above && phase_total >= pt) {
                     if (car_below_count == 1) {
                         ESP_LOGI(TAG, "EV afbouw start: %dW (L1:%dW L2:%dW L3:%dW drempel:%dW)",
                                  (int)phase_total, (int)l1, (int)l2, (int)l3, (int)(pt * 3));
@@ -443,6 +454,30 @@ static void sessy_poll_task(void *arg)
                     ESP_LOGI(TAG, "Car charging %s (L1:%dW L2:%dW L3:%dW threshold/phase:%dW)",
                              now_charging ? "DETECTED" : "STOPPED",
                              (int)l1, (int)l2, (int)l3, (int)pt);
+
+                    static sessy_strategy_t s_ev_saved_strategy = STRATEGY_NOM;
+                    static bool s_ev_auto_idled = false;
+
+                    if (cfg->ev_auto_idle) {
+                        if (now_charging && !s_ev_auto_idled) {
+                            xSemaphoreTake(data->mutex, portMAX_DELAY);
+                            s_ev_saved_strategy = data->strategy_valid ? data->active_strategy : STRATEGY_NOM;
+                            xSemaphoreGive(data->mutex);
+                            if (sessy_api_set_strategy(STRATEGY_IDLE) == ESP_OK) {
+                                s_ev_auto_idled = true;
+                                ESP_LOGI(TAG, "EV auto-idle: strategy set to IDLE (was %s)",
+                                         sessy_strategy_to_string(s_ev_saved_strategy));
+                            }
+                        } else if (!now_charging && s_ev_auto_idled) {
+                            if (sessy_api_set_strategy(s_ev_saved_strategy) == ESP_OK) {
+                                s_ev_auto_idled = false;
+                                ESP_LOGI(TAG, "EV auto-idle: strategy restored to %s",
+                                         sessy_strategy_to_string(s_ev_saved_strategy));
+                            }
+                        }
+                    } else {
+                        s_ev_auto_idled = false;
+                    }
                 }
             }
         }
