@@ -1,6 +1,6 @@
 # SessyPilot
 
-Lightweight ESP-IDF app that provides a touchscreen UI to monitor and control a Sessy battery/dongle. Implements mDNS discovery, Sessy HTTP API integration, and an LVGL-based UI with dedicated Auto Laden and Settings controls.
+SessyPilot automatically puts the Sessy home battery into `IDLE` when your EV starts charging, and restores the original strategy when charging stops — preventing the battery from discharging into the car. Everything runs on an ESP32-S3 with touchscreen. Battery status, energy data, and controls are available as a bonus.
 
 ## Hardware
 
@@ -10,16 +10,16 @@ Lightweight ESP-IDF app that provides a touchscreen UI to monitor and control a 
 
 ## Features
 
-- **mDNS discovery:** automatically discovers Sessy Dongle and P1 Meter via mDNS TXT field `device`. Manual hostname/IP override available in Settings.
-- **Sessy API integration:** status, strategy, and energy polling; immediate control from the UI via `sessy_api_*` calls and `sessy_poll_now()` for synchronous refresh.
-- **P1 Meter integration:** polls the Sessy P1 Meter for grid power data (consumed/produced/net).
-- **EV charge detection:** automatically detects electric vehicle charging based on total house consumption (P1 net power + solar production + battery power). Configurable threshold and stop delay with hysteresis to prevent false triggers.
-- **LVGL UI:** screens for Status, Control, Energy, Settings and an Auto Laden page with a large toggle button.
+- **Auto Sessy Idle:** the core feature. When EV charging is detected, Sessy is automatically set to `IDLE` so the battery does not discharge into the car. When charging stops, the original strategy is restored automatically.
+- **EV charge detection:** based on total house consumption (P1 net power + solar + battery). Configurable power threshold and stop delay with hysteresis to prevent false triggers.
+- **SoftAP + Captive Portal:** when no WiFi credentials are configured or the connection fails, the device starts an access point (`SessyPilot-Setup`). Connecting opens a captive portal for WiFi setup — no serial connection needed.
+- **mDNS discovery:** automatically discovers Sessy Dongle and P1 Meter via mDNS. Manual hostname/IP override available in Settings.
+- **Runtime-configurable settings:** WiFi credentials, Dongle/P1 hostnames, Sessy API credentials, EV charge threshold/delay — all configurable from the Settings UI without recompiling.
 - **OTA firmware update:** HTTP server on port 8080 accepts firmware uploads with progress overlay on the display.
-- **Runtime-configurable settings:** WiFi credentials, Dongle/P1 hostnames, Sessy API credentials, EV charge threshold/delay, and optional Sessy Idle behavior at 0% SOC—all configurable from the Settings UI without recompiling.
-- **Status bar:** Shows WiFi, Sessy, and P1 connection status with IP address at the top of the screen.
-- **NTP time sync:** automatic time synchronization via SNTP after WiFi connects. Log messages show real timestamps (CET/CEST timezone).
-- **Remote logging:** in-memory log buffer accessible via HTTP at `/log` for remote debugging.
+- **LVGL UI:** touchscreen screens for Status, Energy, Control and Settings — plus an Auto Laden toggle for manual override.
+- **Status bar:** shows WiFi, Sessy, and P1 connection status with IP address.
+- **Remote logging:** in-memory log buffer accessible via HTTP at `/log`.
+- **NTP time sync:** automatic time synchronization via SNTP (CET/CEST timezone).
 
 ## Quick Build & Flash
 
@@ -95,7 +95,8 @@ main/
 ├── p1/                 # P1 Meter REST API client (no auth)
 ├── sessy/              # Sessy Dongle REST API client + polling task
 ├── settings/           # NVS storage for WiFi/Sessy/EV config
-├── wifi/               # WiFi STA + mDNS discovery (Dongle + P1 Meter)
+├── wifi/               # WiFi STA, SoftAP captive portal + mDNS discovery
+├── sessions/           # Append-only CSV session log per EV charge session
 ├── ui/                 # LVGL screens
 │   ├── ui_main.c       # Status bar, tabview, OTA overlay, refresh timer
 │   ├── ui_auto_load.c  # Auto Laden toggle screen
