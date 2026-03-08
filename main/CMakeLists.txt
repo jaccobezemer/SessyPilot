@@ -6,11 +6,13 @@ idf_component_register(
         "Touch/esp_lcd_touch/esp_lcd_touch.c"
         "TCA9554PWR/TCA9554PWR.c"
         "wifi/wifi_manager.c"
+        "wifi/captive_portal.c"
         "sessy/sessy_api.c"
         "p1/p1_api.c"
         "settings/settings.c"
         "ota/ota_server.c"
         "log/log_buffer.c"
+        "sessions/session_log.c"
         "ui/ui_main.c"
         "ui/ui_auto_load.c"
         "ui/ui_status.c"
@@ -30,6 +32,7 @@ idf_component_register(
         "settings"
         "ota"
         "log"
+        "sessions"
         "ui"
 
     REQUIRES
@@ -41,5 +44,6 @@ idf_component_register(
         esp_http_client
         esp_http_server
         app_update
+        spiffs
         json
 )

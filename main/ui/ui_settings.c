@@ -23,6 +23,7 @@ static lv_obj_t *ta_car_stop_delay;
 static lv_obj_t *slider_dim;
 static lv_obj_t *lbl_dim_val;
 static lv_obj_t *kb;
+static lv_obj_t *s_parent = NULL;
 
 static void ta_event_cb(lv_event_t *e)
 {
@@ -32,9 +33,13 @@ static void ta_event_cb(lv_event_t *e)
     if (code == LV_EVENT_FOCUSED) {
         lv_keyboard_set_textarea(kb, ta);
         lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+        /* Add bottom padding so the last rows can scroll above the keyboard overlay */
+        lv_obj_set_style_pad_bottom(s_parent, 185, 0);
+        lv_obj_scroll_to_view(ta, LV_ANIM_ON);
     } else if (code == LV_EVENT_DEFOCUSED) {
         lv_keyboard_set_textarea(kb, NULL);
         lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_pad_bottom(s_parent, 10, 0);
     }
 }
 
@@ -104,7 +109,9 @@ static void do_save_cb(lv_timer_t *timer)
     settings_set_wifi(s_pending_save.ssid, s_pending_save.pass);
     settings_set_dongle_hostname(s_pending_save.dongle_host);
     settings_set_p1_hostname(s_pending_save.p1_host);
-    settings_set_sessy_creds(s_pending_save.sessy_user, s_pending_save.sessy_pass);
+    if (s_pending_save.sessy_user[0] != '\0' && s_pending_save.sessy_pass[0] != '\0') {
+        settings_set_sessy_creds(s_pending_save.sessy_user, s_pending_save.sessy_pass);
+    }
     if (s_pending_save.car_thresh >= 0) {
         settings_set_car_charge_threshold(s_pending_save.car_thresh);
     }
@@ -223,6 +230,7 @@ static void reset_btn_cb(lv_event_t *e)
 void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
 {
     s_shared = shared_data;
+    s_parent = parent;
     const settings_t *cfg = settings_get();
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
@@ -595,9 +603,10 @@ void ui_settings_create(lv_obj_t *parent, app_shared_data_t *shared_data)
     lv_obj_center(reset_lbl);
     lv_obj_add_event_cb(reset_btn, reset_btn_cb, LV_EVENT_CLICKED, NULL);
 
-    // On-screen keyboard (hidden by default)
-    kb = lv_keyboard_create(parent);
-    lv_obj_set_size(kb, LV_PCT(100), 180);
+    /* Keyboard as screen overlay so it's always visible next to the focused field */
+    kb = lv_keyboard_create(lv_scr_act());
+    lv_obj_set_size(kb, 480, 180);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
 }
 

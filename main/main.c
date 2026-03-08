@@ -21,10 +21,12 @@
 #include "app_data.h"
 #include "settings.h"
 #include "wifi_manager.h"
+#include "captive_portal.h"
 #include "sessy_api.h"
 #include "p1_api.h"
 #include "ota_server.h"
 #include "log_buffer.h"
+#include "session_log.h"
 #include "ui_main.h"
 
 #define LEDC_TIMER              LEDC_TIMER_0
@@ -242,6 +244,18 @@ static void wifi_event_callback(wifi_mgr_event_t event, void *arg)
     case WIFI_MGR_EVENT_P1_NOT_FOUND:
         ESP_LOGW(TAG, "P1 meter not found via mDNS, will retry...");
         break;
+
+    case WIFI_MGR_EVENT_NO_CREDENTIALS:
+        ESP_LOGW(TAG, "No WiFi credentials — starting setup AP");
+        wifi_manager_start_ap();
+        captive_portal_start();
+        break;
+
+    case WIFI_MGR_EVENT_CONNECT_FAILED:
+        ESP_LOGW(TAG, "WiFi connect failed — starting setup AP");
+        wifi_manager_start_ap();
+        captive_portal_start();
+        break;
     }
 }
 
@@ -454,6 +468,11 @@ static void sessy_poll_task(void *arg)
                     ESP_LOGI(TAG, "Car charging %s (L1:%dW L2:%dW L3:%dW threshold/phase:%dW)",
                              now_charging ? "DETECTED" : "STOPPED",
                              (int)l1, (int)l2, (int)l3, (int)pt);
+                    if (now_charging) {
+                        session_log_start();
+                    } else {
+                        session_log_stop();
+                    }
 
                     static sessy_strategy_t s_ev_saved_strategy = STRATEGY_NOM;
                     static bool s_ev_auto_idled = false;
@@ -489,8 +508,9 @@ static void sessy_poll_task(void *arg)
 /********************* App Main *********************/
 void app_main(void)
 {
-    // ===== PHASE 0: Log Buffer (before anything else) =====
+    // ===== PHASE 0: Log Buffer + Session Log (before anything else) =====
     log_buffer_init();
+    session_log_init();
 
     // ===== PHASE 1: Hardware Init =====
     ledc_init();
@@ -685,7 +705,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 2048));  // 4096 / 8192 = 50% duty cycle
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
 
-    ESP_LOGI(TAG, "Sessy Controller running");
+    ESP_LOGI(TAG, "SessyPilot running");
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10));
         lv_timer_handler();

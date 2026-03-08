@@ -1,4 +1,4 @@
-# Sessy Controller
+# SessyPilot
 
 Lightweight ESP-IDF app that provides a touchscreen UI to monitor and control a Sessy battery/dongle. Implements mDNS discovery, Sessy HTTP API integration, and an LVGL-based UI with dedicated Auto Laden and Settings controls.
 
@@ -36,7 +36,7 @@ idf.py -p COM3 flash
 idf.py -p COM3 monitor
 
 # OTA update (while connected to same WiFi)
-curl -X POST http://<device-ip>:8080/ota --data-binary @build/Sessy-Controller.bin
+curl -X POST http://<device-ip>:8080/ota --data-binary @build/sessypilot.bin
 ```
 
 ## Architecture
@@ -56,7 +56,7 @@ curl -X POST http://<device-ip>:8080/ota --data-binary @build/Sessy-Controller.b
 
 ## Configuration
 
-- Run `idf.py menuconfig` (or use the SDK Configuration Editor in VS Code) and open the *Sessy Controller Configuration* menu.
+- Run `idf.py menuconfig` (or use the SDK Configuration Editor in VS Code) and open the *SessyPilot Configuration* menu.
 - `SESSY_IDLE_AT_SOC_ZERO` — when enabled, the Auto Laden button is considered active (green) when the Sessy SOC is 0%, in addition to when the active strategy is `IDLE`. This option can be toggled at runtime in the Settings UI (no recompile needed). Default is configurable in `main/Kconfig.projbuild`.
 - Common options also live in `main/Kconfig.projbuild` (WiFi defaults, polling intervals).
 

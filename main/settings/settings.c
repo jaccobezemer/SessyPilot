@@ -69,11 +69,21 @@ static void load_from_nvs(void)
 
     len = sizeof(s_settings.sessy_username);
     if (nvs_get_str(handle, "sessy_user", s_settings.sessy_username, &len) == ESP_OK) {
-        ESP_LOGI(TAG, "Loaded Sessy username from NVS");
+        if (s_settings.sessy_username[0] != '\0') {
+            ESP_LOGI(TAG, "Loaded Sessy username from NVS");
+        } else {
+            strlcpy(s_settings.sessy_username, CONFIG_SESSY_USERNAME, sizeof(s_settings.sessy_username));
+            ESP_LOGW(TAG, "NVS sessy_user was empty, using Kconfig default");
+        }
     }
     len = sizeof(s_settings.sessy_password);
     if (nvs_get_str(handle, "sessy_pass", s_settings.sessy_password, &len) == ESP_OK) {
-        ESP_LOGI(TAG, "Loaded Sessy password from NVS");
+        if (s_settings.sessy_password[0] != '\0') {
+            ESP_LOGI(TAG, "Loaded Sessy password from NVS");
+        } else {
+            strlcpy(s_settings.sessy_password, CONFIG_SESSY_PASSWORD, sizeof(s_settings.sessy_password));
+            ESP_LOGW(TAG, "NVS sessy_pass was empty, using Kconfig default");
+        }
     }
 
     uint8_t autoload_soc = 0;
@@ -232,11 +242,11 @@ esp_err_t settings_set_sessy_creds(const char *username, const char *password)
         return ret;
     }
 
-    if (username) {
+    if (username && username[0] != '\0') {
         strlcpy(s_settings.sessy_username, username, sizeof(s_settings.sessy_username));
         nvs_set_str(handle, "sessy_user", s_settings.sessy_username);
     }
-    if (password) {
+    if (password && password[0] != '\0') {
         strlcpy(s_settings.sessy_password, password, sizeof(s_settings.sessy_password));
         nvs_set_str(handle, "sessy_pass", s_settings.sessy_password);
     }

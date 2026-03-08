@@ -1,5 +1,6 @@
 #include "ota_server.h"
 #include "log_buffer.h"
+#include "session_log.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
@@ -9,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdatomic.h>
+#include <time.h>
 
 static const char *TAG = "ota_server";
 static httpd_handle_t s_server = NULL;
@@ -23,7 +25,7 @@ int ota_get_progress(void)
 static const char UPLOAD_PAGE_PRE[] =
     "<!DOCTYPE html><html><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Sessy Controller OTA Update</title>"
+    "<title>SessyPilot OTA Update</title>"
     "<style>"
     "body{font-family:sans-serif;background:#1e1e1e;color:#ccc;"
     "display:flex;justify-content:center;align-items:center;height:100vh;margin:0}"
@@ -39,7 +41,7 @@ static const char UPLOAD_PAGE_PRE[] =
     "#fill{height:100%;width:0%;background:#2196F3;transition:width 0.3s}"
     "#status{margin-top:0.5em;font-size:14px}"
     "</style></head><body><div class='box'>"
-    "<h2>Sessy Controller OTA Update</h2>"
+    "<h2>SessyPilot OTA Update</h2>"
     "<p class='ver'>Current firmware: ";
 
 static const char UPLOAD_PAGE_POST[] =
@@ -65,9 +67,9 @@ static const char UPLOAD_PAGE_POST[] =
     "xhr.onload=function(){"
     "if(xhr.status==200){st.textContent='Success! Rebooting...';fill.style.width='100%';fill.style.background='#4CAF50';"
     "setTimeout(function(){st.textContent='Waiting for device...';fill.style.background='#FF9800';"
-    "var iv=setInterval(function(){fetch('/').then(function(){clearInterval(iv);"
+    "var iv=setInterval(function(){fetch('/update').then(function(){clearInterval(iv);"
     "st.textContent='Device is back! Reloading...';fill.style.background='#4CAF50';"
-    "setTimeout(function(){location.reload();},500);}).catch(function(){});},2000);},4000);}"
+    "setTimeout(function(){location.href='/';},500);}).catch(function(){});},2000);},4000);}"
     "else{st.textContent='Error: '+xhr.responseText;fill.style.background='#F44336';btn.disabled=false;}};"
     "xhr.onerror=function(){st.textContent='Upload failed';fill.style.background='#F44336';btn.disabled=false;};"
     "xhr.open('POST','/update',true);"
@@ -75,7 +77,7 @@ static const char UPLOAD_PAGE_POST[] =
     "xhr.send(f);};"
     "</script></div></body></html>";
 
-/* ── GET / — serve upload page ──────────────────────────────────── */
+/* ── GET /update — serve upload page ───────────────────────────── */
 static esp_err_t index_get_handler(httpd_req_t *req)
 {
     const esp_app_desc_t *app = esp_app_get_description();
@@ -209,7 +211,7 @@ static const char LOG_PAGE[] =
     "#conn{font-size:12px;padding:3px 10px;border-radius:10px;background:#333}"
     "#log{padding:8px 12px;white-space:pre-wrap;word-break:break-all;min-height:100vh}"
     "</style></head><body>"
-    "<div id='hdr'><h2>Sessy Controller Log</h2><span id='conn'>Connecting...</span></div>"
+    "<div id='hdr'><h2>SessyPilot Log</h2><span id='conn'>Connecting...</span></div>"
     "<pre id='log'></pre>"
     "<script>"
     "var C={'31':'#F44336','32':'#4CAF50','33':'#FFB74D','35':'#CE93D8','36':'#4DD0E1'};"
@@ -326,6 +328,146 @@ static esp_err_t log_sse_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ── GET /sessions.csv[?clear=1] — download sessions as CSV file ── */
+static esp_err_t sessions_csv_handler(httpd_req_t *req)
+{
+    /* Check for ?clear=1 query parameter */
+    bool do_clear = false;
+    size_t qlen = httpd_req_get_url_query_len(req);
+    if (qlen > 0 && qlen < 64) {
+        char query[64];
+        httpd_req_get_url_query_str(req, query, sizeof(query));
+        char val[4];
+        if (httpd_query_key_value(query, "clear", val, sizeof(val)) == ESP_OK) {
+            do_clear = (val[0] == '1');
+        }
+    }
+
+    FILE *f = fopen("/spiffs/sessions.csv", "r");
+    if (!f) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "No sessions file yet");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "text/csv");
+    httpd_resp_set_hdr(req, "Content-Disposition",
+                       "attachment; filename=\"ev_sessions.csv\"");
+
+    char buf[256];
+    while (fgets(buf, sizeof(buf), f)) {
+        httpd_resp_send_chunk(req, buf, strlen(buf));
+    }
+    fclose(f);
+
+    if (do_clear) {
+        session_log_clear();
+        ESP_LOGI(TAG, "Sessions cleared after download");
+    }
+
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+/* ── GET / — status page with EV charging sessions ─────────────── */
+static esp_err_t status_get_handler(httpd_req_t *req)
+{
+    static const char *HEAD =
+        "<!DOCTYPE html><html><head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta http-equiv='refresh' content='30'>"
+        "<title>SessyPilot</title>"
+        "<style>"
+        "body{font-family:sans-serif;background:#1e1e1e;color:#ccc;margin:0;padding:20px}"
+        "h1{color:#2196F3;margin-bottom:4px}"
+        ".meta{color:#666;font-size:13px;margin-bottom:16px}"
+        ".links{margin-bottom:24px}"
+        ".links a{color:#2196F3;text-decoration:none;margin-right:20px;font-size:14px}"
+        "h3{color:#aaa;margin-bottom:8px;font-size:15px}"
+        "table{border-collapse:collapse;width:100%;max-width:620px}"
+        "th{background:#2a2a2a;color:#aaa;padding:8px 14px;text-align:left;font-size:13px}"
+        "td{padding:8px 14px;border-bottom:1px solid #2a2a2a;font-size:13px}"
+        ".active{color:#4CAF50;font-weight:bold}"
+        ".dur{color:#888}"
+        ".empty{color:#555;font-style:italic}"
+        "</style></head><body>"
+        "<h1>SessyPilot</h1>";
+
+    const esp_app_desc_t *app = esp_app_get_description();
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    char time_str[32];
+    strftime(time_str, sizeof(time_str), "%d-%m-%Y %H:%M:%S", &tm_now);
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send_chunk(req, HEAD, HTTPD_RESP_USE_STRLEN);
+
+    char meta[128];
+    snprintf(meta, sizeof(meta),
+             "<p class='meta'>Versie: %s &bull; Tijd: %s</p>",
+             app->version, time_str);
+    httpd_resp_send_chunk(req, meta, HTTPD_RESP_USE_STRLEN);
+
+    static const char *LINKS =
+        "<p class='links'>"
+        "<a href='/update'>&#x2B06; Firmware update</a>"
+        "<a href='/log'>&#x1F4CB; Log viewer</a>"
+        "<a href='/sessions.csv' download>&#x2B07; Download sessies (.csv)</a>"
+        "<a href='/sessions.csv?clear=1' download>&#x1F5D1; Download &amp; leeg bestand</a>"
+        "</p>";
+    httpd_resp_send_chunk(req, LINKS, HTTPD_RESP_USE_STRLEN);
+
+    static const char *TABLE_HEAD =
+        "<h3>EV Laadsessies</h3>"
+        "<table><thead><tr>"
+        "<th>Start</th><th>Stop</th><th>Duur</th>"
+        "</tr></thead><tbody>";
+    httpd_resp_send_chunk(req, TABLE_HEAD, HTTPD_RESP_USE_STRLEN);
+
+    ev_session_t sessions[SESSION_MAX];
+    int n = session_log_get(sessions, SESSION_MAX);
+
+    if (n == 0) {
+        static const char *EMPTY =
+            "<tr><td colspan='3' class='empty'>Nog geen laadsessies geregistreerd.</td></tr>";
+        httpd_resp_send_chunk(req, EMPTY, HTTPD_RESP_USE_STRLEN);
+    } else {
+        char row[320];
+        for (int i = 0; i < n; i++) {
+            char t_start[32], t_stop[64], t_dur[64];
+            struct tm tm_s;
+            localtime_r(&sessions[i].start, &tm_s);
+            strftime(t_start, sizeof(t_start), "%d-%m-%Y %H:%M:%S", &tm_s);
+
+            time_t dur;
+            if (sessions[i].stop == 0) {
+                dur = now - sessions[i].start;
+                snprintf(t_stop, sizeof(t_stop), "<span class='active'>Actief</span>");
+                snprintf(t_dur,  sizeof(t_dur),
+                         "<span class='active'>%lldh %02lldm</span>",
+                         (long long)(dur / 3600), (long long)((dur % 3600) / 60));
+            } else {
+                struct tm tm_e;
+                localtime_r(&sessions[i].stop, &tm_e);
+                strftime(t_stop, sizeof(t_stop), "%d-%m-%Y %H:%M:%S", &tm_e);
+                dur = sessions[i].stop - sessions[i].start;
+                snprintf(t_dur, sizeof(t_dur),
+                         "<span class='dur'>%lldh %02lldm</span>",
+                         (long long)(dur / 3600), (long long)((dur % 3600) / 60));
+            }
+
+            snprintf(row, sizeof(row),
+                     "<tr><td>%s</td><td>%s</td><td>%s</td></tr>",
+                     t_start, t_stop, t_dur);
+            httpd_resp_send_chunk(req, row, HTTPD_RESP_USE_STRLEN);
+        }
+    }
+
+    static const char *TAIL = "</tbody></table></body></html>";
+    httpd_resp_send_chunk(req, TAIL, HTTPD_RESP_USE_STRLEN);
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
 /* ── Start HTTP server ──────────────────────────────────────────── */
 esp_err_t ota_server_start(void)
 {
@@ -343,12 +485,19 @@ esp_err_t ota_server_start(void)
         return err;
     }
 
-    httpd_uri_t index_uri = {
+    httpd_uri_t status_uri = {
         .uri      = "/",
+        .method   = HTTP_GET,
+        .handler  = status_get_handler,
+    };
+    httpd_register_uri_handler(s_server, &status_uri);
+
+    httpd_uri_t update_get_uri = {
+        .uri      = "/update",
         .method   = HTTP_GET,
         .handler  = index_get_handler,
     };
-    httpd_register_uri_handler(s_server, &index_uri);
+    httpd_register_uri_handler(s_server, &update_get_uri);
 
     httpd_uri_t update_uri = {
         .uri      = "/update",
@@ -356,6 +505,13 @@ esp_err_t ota_server_start(void)
         .handler  = update_post_handler,
     };
     httpd_register_uri_handler(s_server, &update_uri);
+
+    httpd_uri_t sessions_csv_uri = {
+        .uri      = "/sessions.csv",
+        .method   = HTTP_GET,
+        .handler  = sessions_csv_handler,
+    };
+    httpd_register_uri_handler(s_server, &sessions_csv_uri);
 
     httpd_uri_t log_uri = {
         .uri      = "/log",

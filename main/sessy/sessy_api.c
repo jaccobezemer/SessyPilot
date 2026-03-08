@@ -61,7 +61,6 @@ static const char* get_sessy_auth(void) {
     snprintf(auth_header, sizeof(auth_header), "Basic %s", b64);
     #pragma GCC diagnostic pop
 
-    // ESP_LOGI(TAG, "Generated auth: %s", auth_header);
     return auth_header;
 }
 

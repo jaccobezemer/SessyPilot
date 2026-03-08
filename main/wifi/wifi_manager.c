@@ -34,13 +34,19 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_connected = false;
         s_retry_count++;
-        int delay_s = s_retry_count < 5 ? s_retry_count : 5;
-        ESP_LOGW(TAG, "Disconnected, retry %d in %ds...", s_retry_count, delay_s);
 
         if (s_callback) {
             s_callback(WIFI_MGR_EVENT_DISCONNECTED, NULL);
         }
 
+        if (s_retry_count >= MAX_RETRY) {
+            ESP_LOGW(TAG, "Max retries (%d) reached, giving up", MAX_RETRY);
+            if (s_callback) s_callback(WIFI_MGR_EVENT_CONNECT_FAILED, NULL);
+            return;
+        }
+
+        int delay_s = s_retry_count < 5 ? s_retry_count : 5;
+        ESP_LOGW(TAG, "Disconnected, retry %d/%d in %ds...", s_retry_count, MAX_RETRY, delay_s);
         vTaskDelay(pdMS_TO_TICKS(delay_s * 1000));
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -65,7 +71,6 @@ esp_err_t wifi_manager_init(wifi_mgr_callback_t callback)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-    // Hostname instellen vóór WiFi start
     ESP_ERROR_CHECK(esp_netif_set_hostname(netif, CONFIG_SESSY_HOSTNAME));
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -85,6 +90,12 @@ esp_err_t wifi_manager_start(void)
 {
     const settings_t *cfg = settings_get();
 
+    if (cfg->wifi_ssid[0] == '\0') {
+        ESP_LOGW(TAG, "No WiFi credentials configured");
+        if (s_callback) s_callback(WIFI_MGR_EVENT_NO_CREDENTIALS, NULL);
+        return ESP_OK;
+    }
+
     wifi_config_t wifi_config = {0};
     strlcpy((char *)wifi_config.sta.ssid, cfg->wifi_ssid, sizeof(wifi_config.sta.ssid));
     strlcpy((char *)wifi_config.sta.password, cfg->wifi_password, sizeof(wifi_config.sta.password));
@@ -94,6 +105,29 @@ esp_err_t wifi_manager_start(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "Connecting to %s...", cfg->wifi_ssid);
+    return ESP_OK;
+}
+
+esp_err_t wifi_manager_start_ap(void)
+{
+    ESP_LOGI(TAG, "Starting AP 'Sessy-Setup'...");
+    esp_wifi_stop();
+    esp_netif_create_default_wifi_ap();  /* create AP netif only when needed */
+
+    wifi_config_t ap_cfg = {
+        .ap = {
+            .ssid       = "Sessy-Setup",
+            .ssid_len   = 11,
+            .max_connection = 4,
+            .authmode   = WIFI_AUTH_OPEN,
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "AP started — connect to 'Sessy-Setup' and open http://192.168.4.1");
     return ESP_OK;
 }
 

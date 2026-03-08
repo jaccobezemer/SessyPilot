@@ -20,10 +20,10 @@ menu "Example Configuration"
             Note, if the Double Frame Buffer is used, then we can also avoid the tearing effect without the lock.
 endmenu
 
-menu "Sessy Controller Configuration"
+menu "SessyPilot Configuration"
     config SESSY_HOSTNAME
         string "Device hostname (mDNS / DHCP)"
-        default "Sessy-Controller"
+        default "SessyPilot"
         help
             Hostname of this device on the local network.
             Visible in router DHCP table and reachable as <hostname>.local via mDNS.
@@ -56,13 +56,13 @@ menu "Sessy Controller Configuration"
 
     config SESSY_USERNAME
         string "Sessy Username (from dongle sticker)"
-        default "DDGHC47E"
+        default ""
         help
         Username van Sessy dongle (bijv. DDGHC47E)
 
     config SESSY_PASSWORD
         string "Sessy Password (from dongle sticker)" 
-        default "XUSQS56C"
+        default ""
         help
         Password van Sessy dongle (bijv. XUSQS56C)
 
