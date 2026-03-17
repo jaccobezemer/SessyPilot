@@ -412,9 +412,11 @@ static void sessy_poll_task(void *arg)
                 int stop_polls = (cfg->car_charge_stop_delay * 60 * 1000) / CONFIG_SESSY_POLL_INTERVAL_MS;
                 if (stop_polls < 3) stop_polls = 3;
 
-                int32_t l1 = data->p1_status.power_consumed_l1;
-                int32_t l2 = data->p1_status.power_consumed_l2;
-                int32_t l3 = data->p1_status.power_consumed_l3;
+                // Add per-phase solar to P1 net draw per phase to get actual consumption.
+                // P1 measures net grid flow only; solar on the same phase offsets what it shows.
+                int32_t l1 = data->p1_status.power_consumed_l1 + data->power_status.phase[0].power;
+                int32_t l2 = data->p1_status.power_consumed_l2 + data->power_status.phase[1].power;
+                int32_t l3 = data->p1_status.power_consumed_l3 + data->power_status.phase[2].power;
                 int32_t phase_total = l1 + l2 + l3;
                 bool all_above = (l1 > pt) && (l2 > pt) && (l3 > pt);
 
