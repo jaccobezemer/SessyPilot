@@ -478,6 +478,7 @@ esp_err_t ota_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.stack_size = 8192;
+    config.max_open_sockets = 4; // limit to 4: 1 SSE + 3 regular, reduces socket pool pressure
 
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {

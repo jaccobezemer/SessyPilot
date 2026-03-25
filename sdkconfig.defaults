@@ -24,3 +24,6 @@ CONFIG_LV_USE_BTN=y
 
 # Main task stack
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# lwIP: increase socket pool to handle httpd + persistent HTTP clients + WiFi internals
+CONFIG_LWIP_MAX_SOCKETS=16

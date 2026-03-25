@@ -11,7 +11,8 @@
 static const char *TAG = "sessy_api";
 
 static char s_base_url[128] = {0};
-static SemaphoreHandle_t s_mutex = NULL;
+static SemaphoreHandle_t s_mutex = NULL;         // protects s_base_url (brief hold)
+static SemaphoreHandle_t s_request_mutex = NULL; // serialises HTTP requests (held during request)
 static esp_http_client_handle_t s_client = NULL;
 
 extern const settings_t *settings_get(void);  // Declaration
@@ -69,6 +70,8 @@ esp_err_t sessy_api_init(const char *base_url)
 {
     s_mutex = xSemaphoreCreateMutex();
     if (!s_mutex) return ESP_ERR_NO_MEM;
+    s_request_mutex = xSemaphoreCreateMutex();
+    if (!s_request_mutex) return ESP_ERR_NO_MEM;
     return sessy_api_set_url(base_url);
 }
 
@@ -101,30 +104,33 @@ static bool ensure_client(void)
 }
 
 // HTTP GET helper - caller must free returned buffer.
-// Holds s_mutex for the duration of the request to serialise access to s_client.
 static char *http_get(const char *path, int *out_len)
 {
+    // Briefly lock to copy URL and set it on the client
     xSemaphoreTake(s_mutex, portMAX_DELAY);
-
     if (!ensure_client()) {
         xSemaphoreGive(s_mutex);
         return NULL;
     }
-
     char url[256];
     snprintf(url, sizeof(url), "%s%s", s_base_url, path);
     esp_http_client_set_url(s_client, url);
     esp_http_client_set_method(s_client, HTTP_METHOD_GET);
     esp_http_client_set_header(s_client, "Accept", "application/json");
     esp_http_client_set_header(s_client, "Authorization", get_sessy_auth());
+    xSemaphoreGive(s_mutex);
+
+    // Serialise the actual HTTP request without blocking URL updates
+    xSemaphoreTake(s_request_mutex, portMAX_DELAY);
 
     esp_err_t err = esp_http_client_open(s_client, 0);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "GET %s open failed: %s", path, esp_err_to_name(err));
-        // Reset client so it reconnects fresh next time
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
         esp_http_client_cleanup(s_client);
         s_client = NULL;
         xSemaphoreGive(s_mutex);
+        xSemaphoreGive(s_request_mutex);
         return NULL;
     }
 
@@ -133,7 +139,7 @@ static char *http_get(const char *path, int *out_len)
     if (status != 200) {
         ESP_LOGE(TAG, "GET %s returned %d", path, status);
         esp_http_client_close(s_client);
-        xSemaphoreGive(s_mutex);
+        xSemaphoreGive(s_request_mutex);
         return NULL;
     }
 
@@ -141,7 +147,7 @@ static char *http_get(const char *path, int *out_len)
     char *buf = malloc(buf_size);
     if (!buf) {
         esp_http_client_close(s_client);
-        xSemaphoreGive(s_mutex);
+        xSemaphoreGive(s_request_mutex);
         return NULL;
     }
 
@@ -154,49 +160,42 @@ static char *http_get(const char *path, int *out_len)
     }
     buf[total_read] = '\0';
 
-    // Close but do NOT cleanup: reuse the connection (keep-alive) next request
-    esp_http_client_close(s_client);
-    xSemaphoreGive(s_mutex);
+    esp_http_client_close(s_client); // keep-alive: close but don't cleanup
+    xSemaphoreGive(s_request_mutex);
 
     if (out_len) *out_len = total_read;
     return buf;
 }
 
-// HTTP POST helper
+// HTTP POST helper — uses ephemeral client to avoid state conflicts with persistent GET client
 static esp_err_t http_post(const char *path, const char *json_body)
 {
     xSemaphoreTake(s_mutex, portMAX_DELAY);
-
-    if (!ensure_client()) {
-        xSemaphoreGive(s_mutex);
-        return ESP_ERR_INVALID_STATE;
-    }
-
     char url[256];
     snprintf(url, sizeof(url), "%s%s", s_base_url, path);
-    esp_http_client_set_url(s_client, url);
-    esp_http_client_set_method(s_client, HTTP_METHOD_POST);
-    esp_http_client_set_header(s_client, "Accept", "application/json");
-    esp_http_client_set_header(s_client, "Authorization", get_sessy_auth());
-    esp_http_client_set_header(s_client, "Content-Type", "application/json");
-    esp_http_client_set_post_field(s_client, json_body, strlen(json_body));
+    xSemaphoreGive(s_mutex);
 
-    esp_err_t err = esp_http_client_perform(s_client);
-    int status = esp_http_client_get_status_code(s_client);
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 5000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) return ESP_FAIL;
 
-    // Clear post field to avoid dangling pointer on reuse
-    esp_http_client_set_post_field(s_client, NULL, 0);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Authorization", get_sessy_auth());
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, json_body, strlen(json_body));
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "POST %s failed: %s", path, esp_err_to_name(err));
-        esp_http_client_cleanup(s_client);
-        s_client = NULL;
-        xSemaphoreGive(s_mutex);
         return err;
     }
-
-    xSemaphoreGive(s_mutex);
-
     if (status != 200) {
         ESP_LOGE(TAG, "POST %s returned %d", path, status);
         return ESP_FAIL;

@@ -393,34 +393,33 @@ static void sessy_poll_task(void *arg)
                 xSemaphoreGive(data->mutex);
             }
 
-            // Car charge detection based on per-phase grid consumption.
-            // A 3-phase EV charger draws roughly equal power on all phases.
-            // Start: ALL phases > threshold/3 for 3 consecutive polls.
-            // Stop:  ANY phase  < threshold/3 for stop_delay polls.
+            // Car charge detection based on total house power.
+            // total_house_power = P1 net + solar + battery = true consumption regardless of solar.
+            // Start: total > threshold for 3 consecutive polls.
+            // Stop:  total < threshold for stop_delay polls; instant stop if total < threshold/3.
             static int car_above_count = 0;
             static int car_below_count = 0;
             static int32_t s_ev_last_logged_w = 0;
             if (data->power_status_valid && data->p1_status_valid) {
-                // Total house power for display (P1 net + solar + battery)
+                // Total house power (P1 net + solar + battery) — correct regardless of solar export
                 int32_t solar_power = data->power_status.phase[0].power
                                     + data->power_status.phase[1].power
                                     + data->power_status.phase[2].power;
                 int32_t total = data->p1_status.power_total + solar_power + data->power_status.sessy.power;
 
+                // Per-phase values for logging only (not used for detection)
+                int32_t l1 = data->p1_status.power_consumed_l1;
+                int32_t l2 = data->p1_status.power_consumed_l2;
+                int32_t l3 = data->p1_status.power_consumed_l3;
+
                 const settings_t *cfg = settings_get();
-                int32_t pt = cfg->car_charge_threshold / 3;  // per-phase threshold
+                int32_t thr = cfg->car_charge_threshold;
                 int stop_polls = (cfg->car_charge_stop_delay * 60 * 1000) / CONFIG_SESSY_POLL_INTERVAL_MS;
                 if (stop_polls < 3) stop_polls = 3;
 
-                // Add per-phase solar to P1 net draw per phase to get actual consumption.
-                // P1 measures net grid flow only; solar on the same phase offsets what it shows.
-                int32_t l1 = data->p1_status.power_consumed_l1 + data->power_status.phase[0].power;
-                int32_t l2 = data->p1_status.power_consumed_l2 + data->power_status.phase[1].power;
-                int32_t l3 = data->p1_status.power_consumed_l3 + data->power_status.phase[2].power;
-                int32_t phase_total = l1 + l2 + l3;
-                bool all_above = (l1 > pt) && (l2 > pt) && (l3 > pt);
+                bool above = (total > thr);
 
-                if (all_above) {
+                if (above) {
                     car_above_count++;
                     car_below_count = 0;
                     s_ev_last_logged_w = 0;
@@ -432,13 +431,12 @@ static void sessy_poll_task(void *arg)
                 bool was_charging = data->car_charging;
                 bool now_charging;
                 if (was_charging) {
-                    // Instant stop: totaalvermogen zakt ineens onder de per-fase drempel
-                    // → handmatig gestopt, geen ramp-down afwachten
-                    if (phase_total < pt) {
+                    // Instant stop: totaal zakt ver onder drempel → auto klaar, geen ramp-down afwachten
+                    if (total < thr / 3) {
                         now_charging = false;
                         if (car_below_count == 1) {
-                            ESP_LOGI(TAG, "EV instant stop: %dW (L1:%dW L2:%dW L3:%dW drempel:%dW)",
-                                     (int)phase_total, (int)l1, (int)l2, (int)l3, (int)(pt * 3));
+                            ESP_LOGI(TAG, "EV instant stop: totaal %dW (drempel %dW)",
+                                     (int)total, (int)thr);
                         }
                     } else {
                         // Geleidelijke afbouw: wacht stop_polls voor zekerheid
@@ -448,16 +446,14 @@ static void sessy_poll_task(void *arg)
                     now_charging = (car_above_count >= 3);
                 }
 
-                // Log ramp-down: eerste poll onder drempel, daarna elke 500W
-                if (was_charging && !all_above && phase_total >= pt) {
+                // Log ramp-down: eerste poll onder drempel, daarna elke 500W daling
+                if (was_charging && !above && total >= thr / 3) {
                     if (car_below_count == 1) {
-                        ESP_LOGI(TAG, "EV afbouw start: %dW (L1:%dW L2:%dW L3:%dW drempel:%dW)",
-                                 (int)phase_total, (int)l1, (int)l2, (int)l3, (int)(pt * 3));
-                        s_ev_last_logged_w = phase_total;
-                    } else if (phase_total <= s_ev_last_logged_w - 500) {
-                        ESP_LOGI(TAG, "EV afbouw: %dW (L1:%dW L2:%dW L3:%dW)",
-                                 (int)phase_total, (int)l1, (int)l2, (int)l3);
-                        s_ev_last_logged_w = phase_total;
+                        ESP_LOGI(TAG, "EV afbouw start: totaal %dW (drempel %dW)", (int)total, (int)thr);
+                        s_ev_last_logged_w = total;
+                    } else if (total <= s_ev_last_logged_w - 500) {
+                        ESP_LOGI(TAG, "EV afbouw: totaal %dW", (int)total);
+                        s_ev_last_logged_w = total;
                     }
                 }
 
@@ -467,9 +463,9 @@ static void sessy_poll_task(void *arg)
                 xSemaphoreGive(data->mutex);
 
                 if (now_charging != was_charging) {
-                    ESP_LOGI(TAG, "Car charging %s (L1:%dW L2:%dW L3:%dW threshold/phase:%dW)",
+                    ESP_LOGI(TAG, "Car charging %s (totaal:%dW L1:%dW L2:%dW L3:%dW drempel:%dW)",
                              now_charging ? "DETECTED" : "STOPPED",
-                             (int)l1, (int)l2, (int)l3, (int)pt);
+                             (int)total, (int)l1, (int)l2, (int)l3, (int)thr);
                     if (now_charging) {
                         session_log_start();
                     } else {
@@ -482,8 +478,11 @@ static void sessy_poll_task(void *arg)
                     if (cfg->ev_auto_idle) {
                         if (now_charging && !s_ev_auto_idled) {
                             xSemaphoreTake(data->mutex, portMAX_DELAY);
-                            s_ev_saved_strategy = data->strategy_valid ? data->active_strategy : STRATEGY_NOM;
+                            sessy_strategy_t cur = data->strategy_valid ? data->active_strategy : STRATEGY_NOM;
                             xSemaphoreGive(data->mutex);
+                            // Never save IDLE as the restore target: if Sessy is already IDLE
+                            // (e.g. from a previous session before a crash), restore to NOM instead.
+                            s_ev_saved_strategy = (cur == STRATEGY_IDLE) ? STRATEGY_NOM : cur;
                             if (sessy_api_set_strategy(STRATEGY_IDLE) == ESP_OK) {
                                 s_ev_auto_idled = true;
                                 ESP_LOGI(TAG, "EV auto-idle: strategy set to IDLE (was %s)",
